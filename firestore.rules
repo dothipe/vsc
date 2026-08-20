@@ -1,0 +1,187 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper: Is user logged in
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Helper: Get user document data
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Helper: Is User assigned a specific role
+    function hasRole(role) {
+      return isSignedIn() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+
+    // Helper: Is User a Super Admin
+    function isSuperAdmin() {
+      return hasRole('super_admin') || hasRole('system_owner') || hasRole('admin');
+    }
+
+    // Helper: Is User a Director
+    function isDirector() {
+      return hasRole('director') || hasRole('tournament_director') || hasRole('organizer') || isSuperAdmin();
+    }
+
+    // Helper: Is User a Referee
+    function isReferee() {
+      return hasRole('referee') || isDirector();
+    }
+
+    // 1. system_settings
+    match /system_settings/{id} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // 2. users
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
+      allow write: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
+    }
+
+    // 3. athletes
+    match /athletes/{id} {
+      allow read: if true;
+      allow write: if isDirector() || (isSignedIn() && resource.data.linkedUserId == request.auth.uid);
+    }
+
+    // 4. clubs
+    match /clubs/{id} {
+      allow read: if true;
+      allow write: if isDirector() || (isSignedIn() && resource.data.managerUserId == request.auth.uid);
+    }
+
+    // 5. club_members
+    match /club_members/{id} {
+      allow read: if true;
+      allow write: if isReferee();
+    }
+
+    // 6. club_join_requests
+    match /club_join_requests/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // 7. seasons
+    match /seasons/{id} {
+      allow read: if true;
+      allow write: if isDirector();
+    }
+
+    // 8. rule_templates, v3_rule_templates, & templates
+    match /rule_templates/{id} {
+      allow read: if true;
+      allow write: if isDirector();
+    }
+    match /v3_rule_templates/{id} {
+      allow read: if true;
+      allow write: if isDirector();
+    }
+    match /templates/{id} {
+      allow read: if true;
+      allow write: if isDirector();
+    }
+
+    // 9. tournaments & v3_tournaments
+    match /tournaments/{id} {
+      allow read: if true;
+      allow create: if isReferee() || 
+        (isSignedIn() && !exists(/databases/$(database)/documents/tournaments/$(id)));
+      allow update: if isReferee() || 
+        (isSignedIn() && (resource.data.creatorId == request.auth.uid || 
+                          resource.data.creatorEmail == request.auth.token.email)) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views', 'updatedAt']));
+      allow delete: if isReferee() || 
+        (isSignedIn() && (resource.data.creatorId == request.auth.uid || 
+                          resource.data.creatorEmail == request.auth.token.email));
+    }
+    match /v3_tournaments/{id} {
+      allow read: if true;
+      allow create: if isReferee() || 
+        (isSignedIn() && !exists(/databases/$(database)/documents/v3_tournaments/$(id)));
+      allow update: if isReferee() || 
+        (isSignedIn() && (resource.data.creatorId == request.auth.uid || 
+                          resource.data.creatorEmail == request.auth.token.email)) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views', 'updatedAt']));
+      allow delete: if isReferee() || 
+        (isSignedIn() && (resource.data.creatorId == request.auth.uid || 
+                          resource.data.creatorEmail == request.auth.token.email));
+    }
+
+    // 10. official_score_ledger
+    match /official_score_ledger/{id} {
+      allow read: if true;
+      allow write: if isReferee();
+    }
+
+    // 11. ranking_snapshots
+    match /ranking_snapshots/{id} {
+      allow read: if true;
+      allow write: if isReferee();
+    }
+
+    // 12. career_snapshots
+    match /career_snapshots/{id} {
+      allow read: if true;
+      allow write: if isReferee();
+    }
+
+    // 13. statistics_snapshots
+    match /statistics_snapshots/{id} {
+      allow read: if true;
+      allow write: if isReferee();
+    }
+
+    // 14. liveboard_snapshots
+    match /liveboard_snapshots/{id} {
+      allow read: if true;
+      allow write: if isReferee();
+    }
+
+    // 15. hall_of_fame
+    match /hall_of_fame/{id} {
+      allow read: if true;
+      allow write: if isDirector();
+    }
+
+    // 16. audit_logs
+    match /audit_logs/{id} {
+      allow read: if isSuperAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Immutable
+    }
+
+    // 17. event_logs
+    match /event_logs/{id} {
+      allow read: if isSuperAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Immutable
+    }
+
+    // 18. repository_metadata
+    match /repository_metadata/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // 19. system_metadata
+    match /system_metadata/{id} {
+      allow read: if isSuperAdmin();
+      allow write: if isSuperAdmin();
+    }
+
+    // 20. sponsors
+    match /sponsors/{id} {
+      allow read: if true;
+      allow write: if isDirector();
+    }
+  }
+}

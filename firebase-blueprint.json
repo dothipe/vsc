@@ -1,0 +1,373 @@
+{
+  "entities": {
+    "SystemSettings": {
+      "title": "SystemSettings",
+      "description": "System feature toggles and global settings",
+      "type": "object",
+      "properties": {
+        "settingId": { "type": "string" },
+        "databaseVersion": { "type": "string" },
+        "maintenanceMode": { "type": "boolean" },
+        "rankingsEnabled": { "type": "boolean" },
+        "liveboardEnabled": { "type": "boolean" },
+        "modules": { "type": "object" }
+      }
+    },
+    "User": {
+      "title": "User",
+      "description": "Authentication and application account",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "googleAvatar": { "type": "string" },
+        "customAvatar": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string" },
+        "permissions": { "type": "array" },
+        "linkedAthleteId": { "type": "string" },
+        "followedTournaments": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "lastLogin": { "type": "string" }
+      }
+    },
+    "Athlete": {
+      "title": "Athlete",
+      "description": "Permanent Athlete Registry (Single Source of Truth of sporting identity)",
+      "type": "object",
+      "properties": {
+        "athleteId": { "type": "string" },
+        "vscNumber": { "type": "string" },
+        "fullName": { "type": "string" },
+        "gender": { "type": "string" },
+        "birthday": { "type": "string" },
+        "province": { "type": "string" },
+        "currentClubId": { "type": "string" },
+        "avatar": { "type": "string" },
+        "biography": { "type": "string" },
+        "facebook": { "type": "string" },
+        "zalo": { "type": "string" },
+        "emergencyContact": { "type": "string" },
+        "equipment": { "type": "string" },
+        "personalNotes": { "type": "string" },
+        "linkedUserId": { "type": "string" },
+        "claimStatus": { "type": "string" },
+        "profileCompletion": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "Club": {
+      "title": "Club",
+      "description": "Official Club Registry details",
+      "type": "object",
+      "properties": {
+        "clubId": { "type": "string" },
+        "clubName": { "type": "string" },
+        "shortName": { "type": "string" },
+        "logo": { "type": "string" },
+        "banner": { "type": "string" },
+        "province": { "type": "string" },
+        "address": { "type": "string" },
+        "description": { "type": "string" },
+        "managerUserId": { "type": "string" },
+        "foundedDate": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "ClubMember": {
+      "title": "ClubMember",
+      "description": "Membership relationship between athletes and clubs",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string" },
+        "clubId": { "type": "string" },
+        "athleteId": { "type": "string" },
+        "userId": { "type": "string" },
+        "role": { "type": "string" },
+        "status": { "type": "string" },
+        "joinedAt": { "type": "string" }
+      }
+    },
+    "ClubJoinRequest": {
+      "title": "ClubJoinRequest",
+      "description": "Requests to join official clubs",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string" },
+        "clubId": { "type": "string" },
+        "athleteId": { "type": "string" },
+        "userId": { "type": "string" },
+        "status": { "type": "string" },
+        "requestedAt": { "type": "string" },
+        "approvedBy": { "type": "string" },
+        "approvedAt": { "type": "string" }
+      }
+    },
+    "Season": {
+      "title": "Season",
+      "description": "Competition Season definitions",
+      "type": "object",
+      "properties": {
+        "seasonId": { "type": "string" },
+        "name": { "type": "string" },
+        "year": { "type": "number" },
+        "status": { "type": "string" },
+        "description": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" }
+      }
+    },
+    "RuleTemplate": {
+      "title": "RuleTemplate",
+      "description": "System scorecard and tournament templates",
+      "type": "object",
+      "properties": {
+        "templateId": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "content": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "Tournament": {
+      "title": "Tournament",
+      "description": "Tournament configuration details",
+      "type": "object",
+      "properties": {
+        "tournamentId": { "type": "string" },
+        "seasonId": { "type": "string" },
+        "name": { "type": "string" },
+        "logo": { "type": "string" },
+        "banner": { "type": "string" },
+        "organizer": { "type": "string" },
+        "ruleSet": { "type": "string" },
+        "status": { "type": "string" },
+        "currentRound": { "type": "string" },
+        "currentDistance": { "type": "number" },
+        "workflowStage": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "OfficialScoreLedger": {
+      "title": "OfficialScoreLedger",
+      "description": "The ONLY official score database for tournaments",
+      "type": "object",
+      "properties": {
+        "scoreId": { "type": "string" },
+        "tournamentId": { "type": "string" },
+        "participantId": { "type": "string" },
+        "round": { "type": "string" },
+        "distance": { "type": "number" },
+        "shots": { "type": "array" },
+        "total": { "type": "number" },
+        "soloShots": { "type": "array" },
+        "reSoloShots": { "type": "array" },
+        "operator": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    },
+    "RankingSnapshot": {
+      "title": "RankingSnapshot",
+      "description": "Ranking standings snapshot at a specific point in time",
+      "type": "object",
+      "properties": {
+        "snapshotId": { "type": "string" },
+        "tournamentId": { "type": "string" },
+        "round": { "type": "string" },
+        "distance": { "type": "number" },
+        "rankings": { "type": "array" },
+        "metadata": { "type": "object" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "CareerSnapshot": {
+      "title": "CareerSnapshot",
+      "description": "Historic season performance snapshot",
+      "type": "object",
+      "properties": {
+        "snapshotId": { "type": "string" },
+        "athleteId": { "type": "string" },
+        "totalTournaments": { "type": "number" },
+        "totalMedals": { "type": "object" },
+        "bestScore": { "type": "number" },
+        "recordedAt": { "type": "string" }
+      }
+    },
+    "StatisticsSnapshot": {
+      "title": "StatisticsSnapshot",
+      "description": "Statistical hit accuracy metrics of an athlete",
+      "type": "object",
+      "properties": {
+        "snapshotId": { "type": "string" },
+        "athleteId": { "type": "string" },
+        "averageAccuracy": { "type": "number" },
+        "longestHitStreak": { "type": "number" },
+        "shotsCount": { "type": "number" },
+        "distanceMetrics": { "type": "object" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "LiveboardSnapshot": {
+      "title": "LiveboardSnapshot",
+      "description": "Live real-time spectator scoreboard cache",
+      "type": "object",
+      "properties": {
+        "snapshotId": { "type": "string" },
+        "tournamentId": { "type": "string" },
+        "activeHeat": { "type": "number" },
+        "activeLanes": { "type": "array" },
+        "leaderboard": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "HallOfFame": {
+      "title": "HallOfFame",
+      "description": "Legend awards and achievements plaques",
+      "type": "object",
+      "properties": {
+        "hallOfFameId": { "type": "string" },
+        "seasonId": { "type": "string" },
+        "athleteId": { "type": "string" },
+        "clubId": { "type": "string" },
+        "awardType": { "type": "string" },
+        "awardTitle": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "achievedAt": { "type": "string" }
+      }
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable security compliance logging trail",
+      "type": "object",
+      "properties": {
+        "logId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userRole": { "type": "string" },
+        "action": { "type": "string" },
+        "targetCollection": { "type": "string" },
+        "targetDocumentId": { "type": "string" },
+        "oldData": { "type": "object" },
+        "newData": { "type": "object" },
+        "timestamp": { "type": "string" }
+      }
+    },
+    "EventLog": {
+      "title": "EventLog",
+      "description": "Log of system event broker updates",
+      "type": "object",
+      "properties": {
+        "logId": { "type": "string" },
+        "eventName": { "type": "string" },
+        "payload": { "type": "object" },
+        "timestamp": { "type": "string" }
+      }
+    },
+    "RepositoryMetadata": {
+      "title": "RepositoryMetadata",
+      "description": "Repository sync status markers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "collectionName": { "type": "string" },
+        "lastSyncTime": { "type": "string" }
+      }
+    },
+    "SystemMetadata": {
+      "title": "SystemMetadata",
+      "description": "Internal diagnostic records and metrics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "moduleName": { "type": "string" },
+        "status": { "type": "string" },
+        "diagnostics": { "type": "object" }
+      }
+    }
+  },
+  "firestore": {
+    "/system_settings/{id}": {
+      "schema": "SystemSettings",
+      "description": "Global settings toggles"
+    },
+    "/users/{id}": {
+      "schema": "User",
+      "description": "Authorized user accounts"
+    },
+    "/athletes/{id}": {
+      "schema": "Athlete",
+      "description": "Competitive competitor profiles"
+    },
+    "/clubs/{id}": {
+      "schema": "Club",
+      "description": "Registered Slingshot Clubs details"
+    },
+    "/club_members/{id}": {
+      "schema": "ClubMember",
+      "description": "Club membership associations"
+    },
+    "/club_join_requests/{id}": {
+      "schema": "ClubJoinRequest",
+      "description": "Requests to join clubs"
+    },
+    "/seasons/{id}": {
+      "schema": "Season",
+      "description": "Season definitions"
+    },
+    "/rule_templates/{id}": {
+      "schema": "RuleTemplate",
+      "description": "Round scoring templates"
+    },
+    "/tournaments/{id}": {
+      "schema": "Tournament",
+      "description": "Tournament setups and progress"
+    },
+    "/official_score_ledger/{id}": {
+      "schema": "OfficialScoreLedger",
+      "description": "Official immutable score records"
+    },
+    "/ranking_snapshots/{id}": {
+      "schema": "RankingSnapshot",
+      "description": "Leaderboard stands snapshots"
+    },
+    "/career_snapshots/{id}": {
+      "schema": "CareerSnapshot",
+      "description": "Historic competitor career summaries"
+    },
+    "/statistics_snapshots/{id}": {
+      "schema": "StatisticsSnapshot",
+      "description": "Athlete accurate metrics metrics"
+    },
+    "/liveboard_snapshots/{id}": {
+      "schema": "LiveboardSnapshot",
+      "description": "Real-time broadcast live score cache"
+    },
+    "/hall_of_fame/{id}": {
+      "schema": "HallOfFame",
+      "description": "Legends plaques"
+    },
+    "/audit_logs/{id}": {
+      "schema": "AuditLog",
+      "description": "Immutable security logs"
+    },
+    "/event_logs/{id}": {
+      "schema": "EventLog",
+      "description": "System event trace logs"
+    },
+    "/repository_metadata/{id}": {
+      "schema": "RepositoryMetadata",
+      "description": "Internal synchronization markers"
+    },
+    "/system_metadata/{id}": {
+      "schema": "SystemMetadata",
+      "description": "Diagnostics and metadata logs"
+    }
+  }
+}

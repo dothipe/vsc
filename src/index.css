@@ -1,0 +1,107 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Custom palette extensions to support the legacy project colors gracefully */
+  --color-slate-150: #eaedf2;
+  --color-slate-205: #e2e8f0;
+  --color-slate-250: #d6dee9;
+  --color-slate-350: #b0bed0;
+  --color-slate-450: #7c8ba1;
+  --color-slate-550: #556479;
+  --color-slate-650: #3d4b5f;
+  --color-slate-750: #283548;
+  --color-slate-850: #162133;
+
+  --color-indigo-350: #939ffc;
+  --color-indigo-550: #5956ec;
+  --color-indigo-650: #493fdf;
+  --color-indigo-750: #3d34b6;
+
+  --color-amber-450: #f8af17;
+  --color-amber-550: #d97706;
+  --color-amber-750: #9d4307;
+
+  --color-rose-450: #e11d48;
+  --color-rose-750: #9f1239;
+
+  --color-emerald-605: #059669;
+  --color-emerald-650: #05875e;
+  --color-emerald-750: #046a4e;
+  --color-emerald-755: #035a43;
+
+  --color-blue-750: #1c3fac;
+}
+
+body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+/* Custom scrollbars for a cleaner digital scoreboard look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Global Viewport Center Modals to prevent scrolling issues and keep modals strictly centered */
+.viewport-center-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 99999 !important; /* extremely high z-index to stay on top */
+  background-color: rgba(15, 23, 42, 0.6) !important; /* warm dark slate transparent backdrop */
+  backdrop-filter: blur(4px) !important;
+  padding: 12px !important;
+  overflow-y: auto !important;
+}
+
+.viewport-center-content {
+  position: relative !important;
+  width: 100% !important;
+  max-height: 90vh !important;
+  max-height: 90dvh !important;
+  margin-top: auto !important;
+  margin-bottom: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+  border-radius: 1rem !important;
+}

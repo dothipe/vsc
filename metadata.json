@@ -1,0 +1,10 @@
+{
+  "name": "VSC / Vietnam Slingshot Championship",
+  "description": "Hệ thống Quản lý Danh tính Số VSC (Digital Identity Architecture V1.1) kết hợp Ghi điểm, Quản lý VĐV và Xếp hạng tự động cho Vietnam Slingshot Championship.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

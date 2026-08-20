@@ -1,0 +1,46 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "shot_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tournamentId", "order": "ASCENDING" },
+        { "fieldPath": "athleteId", "order": "ASCENDING" },
+        { "fieldPath": "shotIndex", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "shot_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tournamentId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "shot_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "athleteId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "tournament_results",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tournamentId", "order": "ASCENDING" },
+        { "fieldPath": "rank", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "rankings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "seasonId", "order": "ASCENDING" },
+        { "fieldPath": "rank", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

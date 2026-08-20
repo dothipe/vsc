@@ -4,6 +4,7 @@ import {
   Eye, Volume2, Tv, Sparkles, Cpu, Info, Check, RotateCcw, Save, Trash2, ShieldAlert
 } from "lucide-react";
 import { DistanceConfig, Athlete, MatchHistoryItem, StoredAthleteList } from "../types";
+import firebaseAppletConfig from "../../firebase-applet-config.json";
 
 interface SettingsPanelProps {
   matchName: string;
@@ -394,7 +395,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <div className="w-3 h-3 rounded-full bg-emerald-600 animate-pulse shrink-0" />
               <div>
                 <span className="text-xs font-extrabold text-emerald-800 dark:text-emerald-400 block">KẾT NỐI KHỎE MẠNH (ONLINE)</span>
-                <span className="text-[10px] text-emerald-600 dark:text-emerald-500 block font-mono">ai-studio-3031112d-39bd-4933-828d-a6397149f785</span>
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-500 block font-mono">{firebaseAppletConfig.firestoreDatabaseId || "ai-studio-3031112d-39bd-4933-828d-a6397149f785"}</span>
               </div>
             </div>
 

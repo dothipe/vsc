@@ -30,14 +30,15 @@ import {
   writeBatch
 } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import firebaseAppletConfig from "../firebase-applet-config.json";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyACkE51jg6pX3_BtC594LspPQRmQxpmP8Q",
-  authDomain: "ai-studio-applet-webapp-2cd6c.firebaseapp.com",
-  projectId: "ai-studio-applet-webapp-2cd6c",
-  storageBucket: "ai-studio-applet-webapp-2cd6c.firebasestorage.app",
-  messagingSenderId: "23567378860",
-  appId: "1:23567378860:web:e301bed16c74c632377209"
+  apiKey: firebaseAppletConfig.apiKey,
+  authDomain: firebaseAppletConfig.authDomain,
+  projectId: firebaseAppletConfig.projectId,
+  storageBucket: firebaseAppletConfig.storageBucket,
+  messagingSenderId: firebaseAppletConfig.messagingSenderId,
+  appId: firebaseAppletConfig.appId
 };
 
 // Initialize App
@@ -57,7 +58,7 @@ export const db = initializeFirestore(app, {
   }),
   experimentalForceLongPolling: true,
   useFetchHandler: true,
-} as any, "ai-studio-3031112d-39bd-4933-828d-a6397149f785");
+} as any, firebaseAppletConfig.firestoreDatabaseId || "ai-studio-3031112d-39bd-4933-828d-a6397149f785");
 
 export {
   signInWithPopup,

@@ -7,7 +7,7 @@ const firebaseConfig = JSON.parse(fs.readFileSync("./firebase-applet-config.json
 const app = initializeApp(firebaseConfig);
 const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}, "ai-studio-3031112d-39bd-4933-828d-a6397149f785");
+}, firebaseConfig.firestoreDatabaseId || "(default)");
 
 async function run() {
   console.log("Testing read connection...");

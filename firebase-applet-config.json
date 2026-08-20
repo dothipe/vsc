@@ -1,10 +1,12 @@
 {
-  "projectId": "ai-studio-applet-webapp-2cd6c",
-  "appId": "1:23567378860:web:e301bed16c74c632377209",
-  "apiKey": "AIzaSyACkE51jg6pX3_BtC594LspPQRmQxpmP8Q",
-  "authDomain": "ai-studio-applet-webapp-2cd6c.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-3031112d-39bd-4933-828d-a6397149f785",
-  "storageBucket": "ai-studio-applet-webapp-2cd6c.firebasestorage.app",
-  "messagingSenderId": "23567378860",
-  "measurementId": ""
+  "projectId": "vscs-asia",
+  "appId": "1:622110528719:web:671b64a1056cc4b22253ba",
+  "apiKey": "AIzaSyAGSEfLycRbCoFQ8e9NiJ2GFExzloib88U",
+  "authDomain": "vscs-asia.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-vscvietnamslings-3031112d-39bd-4933-828d-a6397149f785",
+  "storageBucket": "vscs-asia.firebasestorage.app",
+  "messagingSenderId": "622110528719",
+  "measurementId": "",
+  "oAuthClientId": "622110528719-3e8ce1ahl9a1c7fmhfbimhtqqa29bno9.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
 }

@@ -935,7 +935,8 @@ export const TournamentManagement: React.FC<TournamentManagementProps> = ({
     setBanner("");
     setPrizePool(0);
     setTournamentFormat("individual");
-    setStatus("draft");
+    setStatus("registration");
+    setWorkflowState("registration_open");
     setHeadReferee("");
     setAssistantReferees([]);
     setNotes("");
@@ -1076,8 +1077,8 @@ export const TournamentManagement: React.FC<TournamentManagementProps> = ({
         banner,
         prizePool,
         tournamentFormat,
-        status,
-        workflowState,
+        status: !editTourId ? "registration" : status,
+        workflowState: !editTourId ? "registration_open" : workflowState,
         headReferee,
         assistantReferees,
         notes,
@@ -1103,7 +1104,14 @@ export const TournamentManagement: React.FC<TournamentManagementProps> = ({
         payosApiKey,
         payosChecksumKey,
         payosAutoApprove,
-        commandCenterState: updatedCommandCenterState
+        commandCenterState: !editTourId
+          ? {
+              ...updatedCommandCenterState,
+              workflowStage: "registration",
+              activeStep: 1,
+              isPaused: false,
+            }
+          : updatedCommandCenterState
       };
 
       const userEmail = currentUser?.email || "unknown@vscs.asia";
@@ -1122,7 +1130,9 @@ export const TournamentManagement: React.FC<TournamentManagementProps> = ({
         );
         lastLoadedAthletesRef.current = athletesList;
       } else {
-        // Create new
+        // Create new - Default to Step 01 (Registration) & Đang Đăng Ký
+        setStatus("registration");
+        setWorkflowState("registration_open");
         await tournamentRepository.createTournament(
           metadataPayload,
           userId,

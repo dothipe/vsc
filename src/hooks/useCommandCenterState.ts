@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Athlete, DistanceConfig, HeatV3, OfficialResult } from "../types";
 import { ScoreValidationEngine } from "../engines/scoreValidationEngine";
 import { getSoloRoundsFromDist } from "../engines/rankingEngine";
+import { updateOnlineTournament } from "../lib/firebaseService";
 
 export type TimelineStage =
   | "registration"
@@ -153,6 +154,7 @@ export function useCommandCenterState({
   // Refs to prevent echo loop in Parent <-> Child state synchronization
   const lastIncomingStateRef = useRef<any>(null);
   const lastOutgoingStateRef = useRef<any>(null);
+  const lastTransitionTimeRef = useRef<number>(0);
   const isSyncingRef = useRef(false);
 
   // State initialization
@@ -209,6 +211,10 @@ export function useCommandCenterState({
   // Sync state from prop when changed externally (e.g. from Firestore subscription)
   useEffect(() => {
     if (commandCenterState) {
+      // If the user transitioned recently (within 3.5s), don't let older remote stage override
+      if (Date.now() - lastTransitionTimeRef.current < 3500) {
+        return;
+      }
       if (deepEqual(commandCenterState, lastOutgoingStateRef.current)) {
         return;
       }
@@ -317,6 +323,40 @@ export function useCommandCenterState({
       }
     }
 
+    const mapWorkflowStageToStatus = (stage: string): string => {
+      switch (stage) {
+        case "registration": return "registration";
+        case "check_in":
+        case "assignment": return "ready";
+        case "competition":
+        case "team_competition":
+        case "ranking":
+        case "qualification": return "live";
+        case "official_result":
+        case "published": return "completed";
+        case "archived": return "archived";
+        default: return "registration";
+      }
+    };
+
+    const mapWorkflowStageToWorkflowState = (stage: string): string => {
+      switch (stage) {
+        case "registration": return "registration_open";
+        case "check_in": return "checkin";
+        case "assignment": return "lane_assignment";
+        case "competition":
+        case "team_competition": return "live";
+        case "ranking": return "ranking_locked";
+        case "qualification": return "verification";
+        case "official_result": return "award";
+        case "published": return "completed";
+        case "archived": return "archived";
+        default: return "registration_open";
+      }
+    };
+
+    let updatedState: any = null;
+
     setLocalState((prev) => {
       const updated: any = {
         ...prev,
@@ -330,8 +370,27 @@ export function useCommandCenterState({
         updated.individualLocked = true;
         updated.teamLocked = true;
       }
+      updatedState = updated;
       return updated;
     });
+
+    lastOutgoingStateRef.current = updatedState;
+    lastTransitionTimeRef.current = Date.now();
+
+    if (setCommandCenterState && updatedState) {
+      setCommandCenterState(updatedState);
+    }
+
+    // Persist immediately to cloud to prevent lag reversion
+    if (activeHistoryId && activeHistoryId.startsWith("tour-") && updatedState) {
+      const mappedStatus = mapWorkflowStageToStatus(nextStage);
+      const mappedWorkflowState = mapWorkflowStageToWorkflowState(nextStage);
+      updateOnlineTournament(activeHistoryId, {
+        status: mappedStatus,
+        workflowState: mappedWorkflowState,
+        commandCenterState: updatedState,
+      }).catch((err) => console.error("Direct stage sync failed:", err));
+    }
 
     if (nextStage === "team_competition") {
       if (setCompetitionMode) setCompetitionMode("team");
@@ -356,7 +415,7 @@ export function useCommandCenterState({
 
     addAuditLog("WORKFLOW_TRANSITION", `Chuyển trạng thái tiến độ giải đấu sang: ${stagesMap[nextStage] || nextStage}.`);
     showToast("success", "Thành công", `Đã chuyển sang giai đoạn ${stagesMap[nextStage] || nextStage}!`);
-  }, [userRole, getIsChecklistValid, localState.competitionActiveTab, setCompetitionMode, addAuditLog, showToast]);
+  }, [userRole, getIsChecklistValid, localState.competitionActiveTab, setCompetitionMode, setCommandCenterState, activeHistoryId, addAuditLog, showToast]);
 
   const handleToggleCheckIn = useCallback(async (athleteId: string) => {
     const updated = getActiveAthletesList().map((ath) => {

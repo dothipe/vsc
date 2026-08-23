@@ -211,11 +211,42 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
     );
   }, [pendingSystemAthlete, athletesList]);
 
-  // Find the exact athlete profile matching the logged-in user (MUST be linked to their verified or pending system athlete account)
+  // Find the exact athlete profile matching the logged-in user (MUST be linked to their verified or pending system athlete account, or matching their registrations)
   const userAthleteProfile = useMemo(() => {
     if (!currentUser) return null;
-    return ownRegisteredAthlete || pendingRegisteredAthlete;
-  }, [currentUser, ownRegisteredAthlete, pendingRegisteredAthlete]);
+    return ownRegisteredAthlete || pendingRegisteredAthlete || (myRegisteredAthletes && myRegisteredAthletes.length > 0 ? myRegisteredAthletes[0] : null);
+  }, [currentUser, ownRegisteredAthlete, pendingRegisteredAthlete, myRegisteredAthletes]);
+
+  // Stage checks for BIB draw permissions:
+  // Step 1: Registration (registration / registration_open) -> VĐV đăng ký, chưa mở bốc thăm BIB
+  // Step 2: Check-in (check_in / checkin) -> MỞ tính năng VĐV tự bốc thăm số hiệu BIB
+  // Step 3+: Competition & onwards -> ĐÓNG tính năng VĐV tự bốc thăm số BIB
+  const currentStatus = currentTournamentDoc?.status || "draft";
+  const activeWorkflowStage = currentTournamentDoc?.commandCenterState?.workflowStage || "registration";
+  const activeWorkflowState = currentTournamentDoc?.workflowState || "registration_open";
+  const isStep2BibDrawActive = activeWorkflowStage === "check_in" || activeWorkflowState === "checkin";
+  const isStep3OrLater = !isStep2BibDrawActive && (
+    ["competition", "team_competition", "ranking", "qualification", "official_result", "published", "archived"].includes(activeWorkflowStage) ||
+    ["live", "ranking_locked", "verification", "award", "completed", "archived"].includes(activeWorkflowState) ||
+    (currentStatus !== "registration" && currentStatus !== "draft" && currentStatus !== "ready")
+  );
+  const isPortalClosed = isStep2BibDrawActive || isStep3OrLater || (currentStatus !== "registration" && currentStatus !== "draft");
+  const isStep2OrLater = isPortalClosed;
+
+  const [selectedAthleteForDraw, setSelectedAthleteForDraw] = useState<any | null>(null);
+
+  const handleOpenDrawModal = (athleteToDraw?: any) => {
+    if (!isStep2BibDrawActive) {
+      if (isStep3OrLater) {
+        alert("⚠️ Tính năng tự bốc thăm số BIB đã đóng lại khi giải đấu chuyển sang Giai đoạn 3 (Thi đấu)!");
+      } else {
+        alert("⚠️ Tính năng tự bốc thăm số BIB chỉ mở khi Ban tổ chức chuyển sang Giai đoạn 2 (Điểm danh)!");
+      }
+      return;
+    }
+    setSelectedAthleteForDraw(athleteToDraw || userAthleteProfile || (myRegisteredAthletes && myRegisteredAthletes.length > 0 ? myRegisteredAthletes[0] : null));
+    setIsDrawModalOpen(true);
+  };
 
   // Auto-cleanup pending registrations older than 24 hours
   useEffect(() => {
@@ -617,8 +648,29 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
                       <span className="font-extrabold text-slate-800 dark:text-white block">{reg.fullName || reg.name}</span>
                       <span className="text-[10px] text-slate-500">{reg.province || "Hà Nội"}</span>
                     </td>
-                    <td className="py-3 font-mono font-bold text-red-600 dark:text-red-400">
-                      {reg.bibNumber || "CHỜ CẤP"}
+                    <td className="py-3 font-mono font-bold">
+                      {reg.bibNumber ? (
+                        <span className="px-2 py-0.5 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded-md border border-red-200 dark:border-red-900/50 text-[11px] font-mono">
+                          {reg.bibNumber}
+                        </span>
+                      ) : isStep2BibDrawActive ? (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDrawModal(reg)}
+                          className="px-2.5 py-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg text-[10px] font-extrabold uppercase shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <Dices className="w-3 h-3" />
+                          <span>Bốc thăm BIB</span>
+                        </button>
+                      ) : isStep3OrLater ? (
+                        <span className="text-[10px] font-mono font-bold text-slate-400">
+                          Chưa có BIB
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-md border border-slate-200 dark:border-slate-750 text-[10px] font-mono font-bold">
+                          Chờ cấp (Step 2)
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 text-slate-700 dark:text-slate-300">
                       {reg.clubName || reg.team || "Tự Do"}
@@ -647,7 +699,14 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
 
   // BIB drawing logic
   const handleDrawBib = async () => {
-    if (!currentUser || !userAthleteProfile || !activeHistoryId) return;
+    if (!isStep2BibDrawActive) {
+      alert("⚠️ Chức năng tự bốc thăm số BIB chỉ áp dụng khi Ban tổ chức chuyển sang Step 2 (Điểm danh) và đã đóng khi sang Step 3 thi đấu!");
+      setIsDrawModalOpen(false);
+      return;
+    }
+
+    const targetAth = selectedAthleteForDraw || userAthleteProfile || (myRegisteredAthletes && myRegisteredAthletes.length > 0 ? myRegisteredAthletes[0] : null);
+    if (!currentUser || !targetAth || !activeHistoryId) return;
     
     setIsDrawing(true);
     try {
@@ -690,9 +749,10 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
 
       // Draw a random BIB
       const randomBib = availableBibs[Math.floor(Math.random() * availableBibs.length)];
+      const targetId = targetAth.id || targetAth.participantId;
 
       const updatedAthletesList = athletesList.map((ath: any) => {
-        if (ath.id === userAthleteProfile.id) {
+        if (ath.id === targetId || ath.participantId === targetId) {
           return {
             ...ath,
             bibNumber: randomBib,
@@ -705,7 +765,7 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
       const updateData: any = { athletes: updatedAthletesList };
       if (currentTournamentDoc?.teamAthletes && currentTournamentDoc.teamAthletes.length > 0) {
         updateData.teamAthletes = currentTournamentDoc.teamAthletes.map((ath: any) => {
-          if (ath.id === userAthleteProfile.id || ath.participantId === userAthleteProfile.id) {
+          if (ath.id === targetId || ath.participantId === targetId) {
             return {
               ...ath,
               bibNumber: randomBib,
@@ -723,11 +783,12 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
         currentUser.email || "",
         "athlete",
         "Tự bốc thăm số BIB",
-        `VĐV ${userAthleteProfile.fullName || userAthleteProfile.name} tự bốc thăm số hiệu BIB thành công: ${randomBib}`
+        `VĐV ${targetAth.fullName || targetAth.name} tự bốc thăm số hiệu BIB thành công: ${randomBib}`
       );
 
       setDrawnBibResult(randomBib);
       setIsDrawModalOpen(false);
+      setSelectedAthleteForDraw(null);
       alert(`🎉 Chúc mừng! Bạn đã bốc thăm thành công số hiệu BIB: ${randomBib}`);
     } catch (err: any) {
       console.error("Lỗi bốc thăm BIB:", err);
@@ -1209,10 +1270,6 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
   }
 
   // 1. GUEST USER OR CLOSED SPECTATOR VIEW FOR PUBLIC REGISTRATION
-  const activeWorkflowStage = currentTournamentDoc?.commandCenterState?.workflowStage || "registration";
-  const activeWorkflowState = currentTournamentDoc?.workflowState || "registration_open";
-  const isStep2OrLater = (tStatus !== "registration" && tStatus !== "draft") || activeWorkflowStage === "check_in" || activeWorkflowState === "checkin";
-  const isPortalClosed = isStep2OrLater;
   if (!currentUser || (isPortalClosed && !userAthleteProfile)) {
     return (
       <div className="space-y-6 animate-fadeIn text-left max-w-4xl mx-auto">
@@ -1341,31 +1398,57 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
           </div>
 
           {/* BIB DRAW AREA OR THE TOURNAMENT MATCH CARD */}
-          {!userAthleteProfile.bibNumber ? (
-            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-slate-900/60 dark:to-slate-900/40 border border-indigo-100 dark:border-slate-800 rounded-3xl p-6 shadow-md text-center space-y-6">
-              <div className="max-w-md mx-auto space-y-2">
-                <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl flex items-center justify-center mx-auto text-indigo-600 dark:text-indigo-400 mb-2">
-                  <Sparkles className="w-6 h-6 animate-pulse" />
+          {isStep2BibDrawActive ? (
+            !userAthleteProfile.bibNumber ? (
+              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-slate-900/60 dark:to-slate-900/40 border border-indigo-100 dark:border-slate-800 rounded-3xl p-6 shadow-md text-center space-y-6">
+                <div className="max-w-md mx-auto space-y-2">
+                  <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl flex items-center justify-center mx-auto text-indigo-600 dark:text-indigo-400 mb-2">
+                    <Sparkles className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <h4 className="text-base font-black text-indigo-900 dark:text-indigo-300 uppercase">GIAI ĐOẠN 2: TỰ BỐC THĂM SỐ BIB THI ĐẤU</h4>
+                  <p className="text-xs text-indigo-600/70 dark:text-slate-400 leading-relaxed">
+                    Ban tổ chức đã mở Giai đoạn 2 (Điểm danh & Bốc thăm). Hãy nhấn nút bên dưới để bốc thăm ngẫu nhiên số hiệu báo danh (BIB) của bạn. Bạn chỉ được phép bốc thăm <strong>duy nhất 1 lần</strong>.
+                  </p>
                 </div>
-                <h4 className="text-base font-black text-indigo-900 dark:text-indigo-300 uppercase">TỰ BỐC THĂM SỐ BIB THI ĐẤU</h4>
-                <p className="text-xs text-indigo-600/70 dark:text-slate-400 leading-relaxed">
-                  Hãy nhấn nút bốc thăm bên dưới để nhận mã số hiệu báo danh (BIB) ngẫu nhiên từ hệ thống. Bạn chỉ được phép thực hiện bốc thăm <strong>duy nhất 1 lần</strong>.
-                </p>
-              </div>
 
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsDrawModalOpen(true)}
-                  className="px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-extrabold text-xs tracking-wider uppercase rounded-2xl shadow-lg shadow-indigo-100 dark:shadow-none transition-all hover:scale-[1.02] active:scale-95 cursor-pointer inline-flex items-center gap-2.5"
-                >
-                  <Dices className="w-5 h-5 text-white" />
-                  <span>BẮT ĐẦU BỐC THĂM SỐ BIB</span>
-                </button>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsDrawModalOpen(true)}
+                    className="px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-extrabold text-xs tracking-wider uppercase rounded-2xl shadow-lg shadow-indigo-100 dark:shadow-none transition-all hover:scale-[1.02] active:scale-95 cursor-pointer inline-flex items-center gap-2.5"
+                  >
+                    <Dices className="w-5 h-5 text-white" />
+                    <span>BẮT ĐẦU BỐC THĂM SỐ BIB</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="text-center">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">THẺ VẬN ĐỘNG VIÊN CHÍNH THỨC</span>
+                  <p className="text-[10px] text-slate-500 italic mt-0.5">Mỗi vận động viên có một thẻ thi đấu được in ra bởi Ban tổ chức.</p>
+                </div>
+
+                {renderAthleteBentoBadge(userAthleteProfile, "vsc-athlete-badge-closed")}
+              </div>
+            )
           ) : (
+            // Step 3 or later: Thi đấu / Kết thúc -> ĐÓNG tính năng bốc thăm BIB
             <div className="space-y-6">
+              {!userAthleteProfile.bibNumber && (
+                <div className="bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-3xl p-6 shadow-xs text-center space-y-3">
+                  <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto mb-1">
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <div className="max-w-md mx-auto space-y-1.5">
+                    <h4 className="text-sm font-black text-amber-800 dark:text-amber-400 uppercase">ĐÃ ĐÓNG TỰ BỐC THĂM SỐ BIB (GIAI ĐOẠN THI ĐẤU)</h4>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                      Giải đấu đã chuyển sang Giai đoạn 3 (Thi Đấu). Chức năng tự bốc thăm số hiệu BIB trực tuyến đã khép lại. Nếu bạn chưa có số BIB, vui lòng liên hệ trực tiếp <strong>Tổ Trọng Tài / Ban Tổ Chức</strong> tại bàn kỹ thuật.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="text-center">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">THẺ VẬN ĐỘNG VIÊN CHÍNH THỨC</span>
                 <p className="text-[10px] text-slate-500 italic mt-0.5">Mỗi vận động viên có một thẻ thi đấu được in ra bởi Ban tổ chức.</p>
@@ -1535,27 +1618,77 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
 
                     {/* DYNAMIC REGISTRATION STATUS FOR OWN REGISTERED ATHLETE */}
                     {ownRegisteredAthlete && (
-                      <div className="p-4 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100/30 dark:border-indigo-900/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-2.5 h-2.5 rounded-full ${ownRegisteredAthlete.paymentStatus === "paid" ? "bg-emerald-500 animate-pulse" : "bg-amber-500 animate-pulse"}`} />
-                          <div>
-                            <span className="text-xs font-black text-slate-800 dark:text-slate-200 block">
-                              BẠN ĐÃ ĐĂNG KÝ THI ĐẤU THÀNH CÔNG GIẢI NÀY
-                            </span>
-                            <span className="text-[10px] text-slate-500">
-                              Hạng mục: <strong>{ownRegisteredAthlete.competitionCategory || "Amateur"}</strong>
+                      <div className="space-y-3">
+                        <div className="p-4 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100/30 dark:border-indigo-900/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2.5 h-2.5 rounded-full ${ownRegisteredAthlete.paymentStatus === "paid" ? "bg-emerald-500 animate-pulse" : "bg-amber-500 animate-pulse"}`} />
+                            <div>
+                              <span className="text-xs font-black text-slate-800 dark:text-slate-200 block">
+                                BẠN ĐÃ ĐĂNG KÝ THI ĐẤU THÀNH CÔNG GIẢI NÀY
+                              </span>
+                              <span className="text-[10px] text-slate-500">
+                                Hạng mục: <strong>{ownRegisteredAthlete.competitionCategory || "Amateur"}</strong>
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-lg border ${
+                              ownRegisteredAthlete.paymentStatus === "paid"
+                                ? "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/45 dark:text-emerald-300 dark:border-emerald-900/50"
+                                : "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/45 dark:text-amber-300 dark:border-amber-900/50"
+                            }`}>
+                              {ownRegisteredAthlete.paymentStatus === "paid" ? "ĐÃ ĐÓNG" : "CHỜ NỘP LỆ PHÍ"}
                             </span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-lg border ${
-                            ownRegisteredAthlete.paymentStatus === "paid"
-                              ? "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/45 dark:text-emerald-300 dark:border-emerald-900/50"
-                              : "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/45 dark:text-amber-300 dark:border-amber-900/50"
-                          }`}>
-                            {ownRegisteredAthlete.paymentStatus === "paid" ? "ĐÃ ĐÓNG" : "CHỜ NỘP LỆ PHÍ"}
-                          </span>
-                        </div>
+
+                        {/* SELF BIB DRAW OR BADGE */}
+                        {!ownRegisteredAthlete.bibNumber ? (
+                          isStep2BibDrawActive ? (
+                            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-slate-900/60 dark:to-slate-900/40 border border-indigo-200 dark:border-indigo-900/50 rounded-2xl p-4.5 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/50 rounded-xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+                                  <Sparkles className="w-5 h-5 animate-pulse" />
+                                </div>
+                                <div>
+                                  <h4 className="text-xs font-black text-indigo-900 dark:text-indigo-300 uppercase">GIAI ĐOẠN 2: TỰ BỐC THĂM SỐ BIB THI ĐẤU</h4>
+                                  <p className="text-[11px] text-indigo-600/80 dark:text-slate-400">
+                                    Ban tổ chức đã mở Giai đoạn 2. Hãy bốc thăm số hiệu báo danh (BIB) của bạn.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDrawModal(ownRegisteredAthlete)}
+                                className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-extrabold text-[11px] tracking-wider uppercase rounded-xl shadow-md shadow-indigo-100 dark:shadow-none transition-all hover:scale-[1.02] active:scale-95 cursor-pointer flex items-center gap-2 shrink-0"
+                              >
+                                <Dices className="w-4 h-4 text-white" />
+                                <span>BỐC THĂM SỐ BIB</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="bg-slate-50 dark:bg-slate-850/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-950/50 rounded-xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+                                  <Clock className="w-5 h-5" />
+                                </div>
+                                <div>
+                                  <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase">SỐ HIỆU BIB (CHỜ BỐC THĂM TẠI STEP 2)</h4>
+                                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                                    Hồ sơ thi đấu đã được ghi nhận. Tính năng <strong>tự bốc thăm số hiệu BIB</strong> sẽ mở khi Ban tổ chức chuyển sang <strong>Giai đoạn 2 (Điểm danh & Bốc thăm)</strong>.
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-extrabold text-[10px] uppercase rounded-lg border border-indigo-150 dark:border-indigo-900/40 shrink-0">
+                                Mở tại Step 2
+                              </span>
+                            </div>
+                          )
+                        ) : (
+                          <div className="pt-2">
+                            {renderAthleteBentoBadge(ownRegisteredAthlete, "vsc-athlete-badge-own")}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1603,27 +1736,77 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
 
                     {/* DYNAMIC REGISTRATION STATUS FOR PENDING CLAIM REGISTERED ATHLETE */}
                     {pendingRegisteredAthlete && (
-                      <div className="p-4 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100/30 dark:border-indigo-900/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-2.5 h-2.5 rounded-full ${pendingRegisteredAthlete.paymentStatus === "paid" ? "bg-emerald-500 animate-pulse" : "bg-amber-500 animate-pulse"}`} />
-                          <div>
-                            <span className="text-xs font-black text-slate-800 dark:text-slate-200 block">
-                              BẠN ĐÃ ĐĂNG KÝ THI ĐẤU THÀNH CÔNG GIẢI NÀY
-                            </span>
-                            <span className="text-[10px] text-slate-500">
-                              Hạng mục: <strong>{pendingRegisteredAthlete.competitionCategory || "Amateur"}</strong>
+                      <div className="space-y-3">
+                        <div className="p-4 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100/30 dark:border-indigo-900/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2.5 h-2.5 rounded-full ${pendingRegisteredAthlete.paymentStatus === "paid" ? "bg-emerald-500 animate-pulse" : "bg-amber-500 animate-pulse"}`} />
+                            <div>
+                              <span className="text-xs font-black text-slate-800 dark:text-slate-200 block">
+                                BẠN ĐÃ ĐĂNG KÝ THI ĐẤU THÀNH CÔNG GIẢI NÀY
+                              </span>
+                              <span className="text-[10px] text-slate-500">
+                                Hạng mục: <strong>{pendingRegisteredAthlete.competitionCategory || "Amateur"}</strong>
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-lg border ${
+                              pendingRegisteredAthlete.paymentStatus === "paid"
+                                ? "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/45 dark:text-emerald-300 dark:border-emerald-900/50"
+                                : "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/45 dark:text-amber-300 dark:border-amber-900/50"
+                            }`}>
+                              {pendingRegisteredAthlete.paymentStatus === "paid" ? "ĐÃ ĐÓNG" : "CHỜ NỘP LỆ PHÍ"}
                             </span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-lg border ${
-                            pendingRegisteredAthlete.paymentStatus === "paid"
-                              ? "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/45 dark:text-emerald-300 dark:border-emerald-900/50"
-                              : "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/45 dark:text-amber-300 dark:border-amber-900/50"
-                          }`}>
-                            {pendingRegisteredAthlete.paymentStatus === "paid" ? "ĐÃ ĐÓNG" : "CHỜ NỘP LỆ PHÍ"}
-                          </span>
-                        </div>
+
+                        {/* SELF BIB DRAW OR BADGE */}
+                        {!pendingRegisteredAthlete.bibNumber ? (
+                          isStep2BibDrawActive ? (
+                            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-slate-900/60 dark:to-slate-900/40 border border-indigo-200 dark:border-indigo-900/50 rounded-2xl p-4.5 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/50 rounded-xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+                                  <Sparkles className="w-5 h-5 animate-pulse" />
+                                </div>
+                                <div>
+                                  <h4 className="text-xs font-black text-indigo-900 dark:text-indigo-300 uppercase">GIAI ĐOẠN 2: TỰ BỐC THĂM SỐ BIB THI ĐẤU</h4>
+                                  <p className="text-[11px] text-indigo-600/80 dark:text-slate-400">
+                                    Ban tổ chức đã mở Giai đoạn 2. Hãy bốc thăm số hiệu báo danh (BIB) của bạn.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDrawModal(pendingRegisteredAthlete)}
+                                className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-extrabold text-[11px] tracking-wider uppercase rounded-xl shadow-md shadow-indigo-100 dark:shadow-none transition-all hover:scale-[1.02] active:scale-95 cursor-pointer flex items-center gap-2 shrink-0"
+                              >
+                                <Dices className="w-4 h-4 text-white" />
+                                <span>BỐC THĂM SỐ BIB</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="bg-slate-50 dark:bg-slate-850/60 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-950/50 rounded-xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+                                  <Clock className="w-5 h-5" />
+                                </div>
+                                <div>
+                                  <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase">SỐ HIỆU BIB (CHỜ BỐC THĂM TẠI STEP 2)</h4>
+                                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                                    Hồ sơ thi đấu đã được ghi nhận. Tính năng <strong>tự bốc thăm số hiệu BIB</strong> sẽ mở khi Ban tổ chức chuyển sang <strong>Giai đoạn 2 (Điểm danh & Bốc thăm)</strong>.
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-extrabold text-[10px] uppercase rounded-lg border border-indigo-150 dark:border-indigo-900/40 shrink-0">
+                                Mở tại Step 2
+                              </span>
+                            </div>
+                          )
+                        ) : (
+                          <div className="pt-2">
+                            {renderAthleteBentoBadge(pendingRegisteredAthlete, "vsc-athlete-badge-pending")}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2136,6 +2319,52 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
           </div>
         );
       })()}
+      {/* GLOBAL CONFIRMATION MODAL FOR BIB DRAW */}
+      {isDrawModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl space-y-5 text-center">
+            <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-full flex items-center justify-center mx-auto">
+              <AlertCircle className="w-6 h-6 animate-bounce" />
+            </div>
+            
+            <div className="space-y-2">
+              <h4 className="text-base font-black text-slate-950 dark:text-white uppercase">XÁC NHẬN BỐC THĂM</h4>
+              <p className="text-xs text-slate-500 leading-relaxed px-2">
+                Hãy xác nhận, bạn chỉ được bốc thăm <strong>1 lần duy nhất</strong>. Khi hệ thống đã gán số BIB cho hồ sơ của bạn, bạn sẽ không thể thay đổi.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setIsDrawModalOpen(false)}
+                disabled={isDrawing}
+                className="flex-1 py-2.5 border border-slate-250 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 font-extrabold text-[11px] rounded-xl transition cursor-pointer"
+              >
+                HỦY BỎ
+              </button>
+              <button
+                type="button"
+                onClick={handleDrawBib}
+                disabled={isDrawing}
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-indigo-100 dark:shadow-none"
+              >
+                {isDrawing ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>ĐANG BỐC...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-3.5 h-3.5 text-white" />
+                    <span>XÁC NHẬN</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

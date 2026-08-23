@@ -1217,10 +1217,15 @@ export function TournamentStateProvider({ children }: ProviderProps) {
           });
           targetCCS.laneStatus = newLaneStatus;
         }
-        const mappedStage = mapWorkflowStateToWorkflowStage(docVal.workflowState, targetCCS.workflowStage);
-        if (mappedStage !== targetCCS.workflowStage) targetCCS.workflowStage = mappedStage;
+        if (!targetCCS.workflowStage && docVal.workflowState) {
+          const mappedStage = mapWorkflowStateToWorkflowStage(docVal.workflowState, targetCCS.workflowStage);
+          if (mappedStage) targetCCS.workflowStage = mappedStage;
+        }
 
-        setCommandCenterState((prev: any) => !deepEqual(prev, targetCCS) ? targetCCS : prev);
+        const isRecentLocalWrite = Date.now() - lastWriteTimeRef.current < 3000;
+        if (!isRecentLocalWrite) {
+          setCommandCenterState((prev: any) => !deepEqual(prev, targetCCS) ? targetCCS : prev);
+        }
         if (docVal.directMaxPoints !== undefined) setDirectMaxPoints(docVal.directMaxPoints !== null ? docVal.directMaxPoints : undefined);
         if (docVal.teamDirectMaxPoints !== undefined) setTeamDirectMaxPoints(docVal.teamDirectMaxPoints !== null ? docVal.teamDirectMaxPoints : undefined);
         if (docVal.directMaxShots !== undefined) setDirectMaxShots(docVal.directMaxShots !== null ? docVal.directMaxShots : 10);

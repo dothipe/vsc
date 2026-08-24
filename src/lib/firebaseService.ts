@@ -71,6 +71,8 @@ export interface TournamentData {
   tournamentFormat?: "individual" | "team" | "mixed";
   savedPodiumIndividual?: any[];
   savedPodiumTeam?: any[];
+  tieBreakRule?: string;
+  seasonId?: string;
 }
 
 export enum OperationType {
@@ -84,8 +86,20 @@ export enum OperationType {
 
 function isPlainObject(val: any): boolean {
   if (val === null || typeof val !== 'object') return false;
+  if (Array.isArray(val)) return false;
+  if (val instanceof Date || val instanceof RegExp) return false;
+  
+  // Exclude Firestore FieldValue/Timestamp or other Firestore internal classes if possible
+  const className = val.constructor ? val.constructor.name : "";
+  if (className && (className.includes("FieldValue") || className.includes("Timestamp") || className.includes("DocumentReference"))) {
+    return false;
+  }
+  
   const proto = Object.getPrototypeOf(val);
-  return proto === null || proto === Object.prototype;
+  if (proto === null || proto === Object.prototype) return true;
+  
+  // If proto is some other object, check if it's a simple object with constructor Name of Object
+  return className === "Object";
 }
 
 export function ensureArray<T = any>(val: any): T[] {
@@ -145,11 +159,81 @@ export function normalizeFirestoreData(obj: any): any {
   return obj;
 }
 
-export function sanitizeFirestoreData<T>(obj: T): T {
+export function pruneOversizedTournamentData(data: any): any {
+  if (!data || typeof data !== "object") return data;
+
+  const clone = JSON.parse(JSON.stringify(data));
+
+  const recursivePrune = (node: any, depth = 0): any => {
+    if (!node || depth > 10) return node;
+
+    if (Array.isArray(node)) {
+      return node.map(item => recursivePrune(item, depth + 1));
+    }
+
+    if (isPlainObject(node)) {
+      for (const key of Object.keys(node)) {
+        const val = node[key];
+        if (key === "auditLogs" && Array.isArray(val)) {
+          node[key] = val.slice(0, 30);
+        } else if (key === "scoreVersions" && Array.isArray(val)) {
+          node[key] = val.slice(-10);
+        } else if ((key === "athletes" || key === "teamAthletes") && Array.isArray(val)) {
+          node[key] = val.map((ath: any) => {
+            if (!ath || typeof ath !== "object") return ath;
+            const cleaned = { ...ath };
+            if (typeof cleaned.avatarUrl === "string" && (cleaned.avatarUrl.startsWith("data:image") || cleaned.avatarUrl.length > 500)) {
+              cleaned.avatarUrl = "";
+            }
+            if (typeof cleaned.avatar === "string" && (cleaned.avatar.startsWith("data:image") || cleaned.avatar.length > 500)) {
+              cleaned.avatar = "";
+            }
+            return cleaned;
+          });
+        } else if (key === "refereeWorkspaces" && Array.isArray(val)) {
+          // Strip duplicate heavy properties from referee workspaces
+          node[key] = val.map((ws: any) => {
+            if (!ws || typeof ws !== "object") return ws;
+            const { avatarUrl, avatar, ...restWs } = ws;
+            return restWs;
+          });
+        } else if (key === "capturedRounds" && isPlainObject(val)) {
+          // Keep captured rounds minimal
+          for (const roundKey of Object.keys(val)) {
+            if (val[roundKey] && val[roundKey].heatsSnapshot) {
+              val[roundKey].heatsSnapshot = val[roundKey].heatsSnapshot.map((heat: any) => {
+                if (!heat || typeof heat !== "object") return heat;
+                return {
+                  ...heat,
+                  athletes: Array.isArray(heat.athletes) ? heat.athletes.map((ath: any) => {
+                    if (!ath || typeof ath !== "object") return ath;
+                    const { avatarUrl, avatar, ...restAth } = ath;
+                    return restAth;
+                  }) : heat.athletes
+                };
+              });
+            }
+          }
+        } else if (typeof val === "object") {
+          node[key] = recursivePrune(val, depth + 1);
+        }
+      }
+    }
+    return node;
+  };
+
+  return recursivePrune(clone);
+}
+
+export function sanitizeFirestoreData<T>(obj: T, isInsideTournamentAthleteList: boolean = false): T {
   if (obj === undefined) return null as any;
   if (obj === null) return null as any;
   if (typeof obj === "string" && obj.startsWith("data:image")) {
-    if (obj.length < 350000) {
+    if (isInsideTournamentAthleteList) {
+      return "" as any;
+    }
+    // Keep compressed images online directly in Firestore
+    if (obj.length < 100000) {
       return obj;
     }
     return "" as any;
@@ -160,34 +244,51 @@ export function sanitizeFirestoreData<T>(obj: T): T {
       // Convert 2D array to a map object { "0": [...], "1": [...] } for Firestore compatibility
       const mapObj: Record<string, any> = {};
       obj.forEach((item, idx) => {
-        mapObj[String(idx)] = sanitizeFirestoreData(item);
+        mapObj[String(idx)] = sanitizeFirestoreData(item, isInsideTournamentAthleteList);
       });
       return mapObj as any;
     }
-    return obj.map(item => sanitizeFirestoreData(item)) as any;
+    return obj.map(item => sanitizeFirestoreData(item, isInsideTournamentAthleteList)) as any;
   }
   if (isPlainObject(obj)) {
     const cleaned: any = {};
+
     for (const key of Object.keys(obj)) {
       let val = (obj as any)[key];
+      const nextIsInsideList = isInsideTournamentAthleteList || key === "athletes" || key === "teamAthletes";
+
+      if (nextIsInsideList && (key === "avatarUrl" || key === "avatar")) {
+        if (typeof val === "string" && (val.startsWith("data:image") || val.length > 500)) {
+          val = "";
+        }
+      }
+
       if (typeof val === "string" && val.startsWith("data:image")) {
-        if (key === "avatarUrl") {
-          if (val.length < 350000) {
-            // Store directly to Cloud Firestore online
+        if (key === "avatarUrl" || key === "avatar") {
+          // Compressed avatar: keep in Firestore
+          if (val.length < 50000) {
+            // Keep online
           } else {
             val = "";
           }
-        } else if (["logo", "banner", "logoUrl", "bannerUrl", "logo", "banner"].includes(key)) {
-          if (val.length < 350000) {
-            // Keep compressed values directly in Firestore
+        } else if (["logo", "banner", "logoUrl", "bannerUrl"].includes(key)) {
+          // Compressed logo / banner: keep in Firestore
+          if (val.length < 95000) {
+            // Keep online
           } else {
             val = "";
           }
         } else {
-          val = "";
+          if (val.length >= 80000) {
+            val = "";
+          }
         }
+      } else if (key === "auditLogs" && Array.isArray(val)) {
+        val = val.slice(0, 50).map(item => sanitizeFirestoreData(item, nextIsInsideList));
+      } else if (key === "scoreVersions" && Array.isArray(val)) {
+        val = val.slice(-15).map(item => sanitizeFirestoreData(item, nextIsInsideList));
       } else {
-        val = sanitizeFirestoreData(val);
+        val = sanitizeFirestoreData(val, nextIsInsideList);
       }
       cleaned[key] = val;
     }
@@ -198,18 +299,6 @@ export function sanitizeFirestoreData<T>(obj: T): T {
 
 export function deserializeFirestoreData<T>(obj: T): T {
   if (obj === undefined || obj === null) return obj;
-
-  if (typeof obj === "string" && obj.startsWith("local-avatar:")) {
-    const id = obj.split(":")[1];
-    if (id) {
-      try {
-        const stored = localStorage.getItem(`vsc-avatar-${id}`);
-        if (stored) return stored as any;
-      } catch (e) {
-        console.warn("localStorage get failed for avatar", e);
-      }
-    }
-  }
 
   if (Array.isArray(obj)) {
     return obj.map(item => deserializeFirestoreData(item)) as any;
@@ -347,6 +436,8 @@ export async function createOnlineTournament(
   const newId = `tour-v3-${Date.now()}`;
   const tourRef = doc(db, "v3_tournaments", newId);
   
+  const { athletes, teamAthletes, inputAthletes, teamInputAthletes, ...restConfig } = config;
+
   const payload: any = {
     id: newId,
     tournamentName: matchName || "Giải đấu mới",
@@ -357,12 +448,21 @@ export async function createOnlineTournament(
     referees: [], // Admin can add referee emails later
     subAdmins: [], // Sub admins with full admin rights
     isPublic: true,
-    ...config
+    ...restConfig
   };
 
   try {
     const sanitizedPayload = sanitizeFirestoreData(payload);
     await setDoc(tourRef, sanitizedPayload);
+
+    // Save heavy partitions in parallel
+    await Promise.all([
+      setDoc(doc(db, "v3_tournaments", newId, "parts", "athletes"), sanitizeFirestoreData({ athletes: athletes || [], inputAthletes: inputAthletes || [] })),
+      setDoc(doc(db, "v3_tournaments", newId, "parts", "teamAthletes"), sanitizeFirestoreData({ teamAthletes: teamAthletes || [], teamInputAthletes: teamInputAthletes || [] })),
+      setDoc(doc(db, "v3_tournaments", newId, "parts", "commandCenter"), sanitizeFirestoreData({ commandCenterState: null })),
+      setDoc(doc(db, "v3_tournaments", newId, "parts", "scoreEvents"), sanitizeFirestoreData({ scoreEvents: [] })),
+      setDoc(doc(db, "v3_tournaments", newId, "parts", "liveTimer"), sanitizeFirestoreData({ liveTimer: null }))
+    ]);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `v3_tournaments/${newId}`);
   }
@@ -415,15 +515,64 @@ export function updateOnlineTournament(id: string, updates: Partial<TournamentDa
         const tourRef = doc(db, "v3_tournaments", id);
         const sanitizedUpdates = sanitizeFirestoreData(finalUpdates);
         
+        // Separate updates into main document updates and partitioned part updates
+        const { 
+          athletes, 
+          teamAthletes, 
+          inputAthletes, 
+          teamInputAthletes, 
+          commandCenterState, 
+          scoreEvents, 
+          liveTimer, 
+          ...mainUpdates 
+        } = sanitizedUpdates;
+
         // Auto-map matchName to tournamentName for backward/forward compatibility
-        if (sanitizedUpdates.matchName) {
-          sanitizedUpdates.tournamentName = sanitizedUpdates.matchName;
+        if (mainUpdates.matchName) {
+          mainUpdates.tournamentName = mainUpdates.matchName;
         }
-        
-        await updateDoc(tourRef, {
-          ...sanitizedUpdates,
-          updatedAt: serverTimestamp()
-        });
+
+        const partsPromises: Promise<any>[] = [];
+
+        if (athletes !== undefined || inputAthletes !== undefined) {
+          const athPartUpdates: any = {};
+          if (athletes !== undefined) athPartUpdates.athletes = athletes;
+          if (inputAthletes !== undefined) athPartUpdates.inputAthletes = inputAthletes;
+          partsPromises.push(setDoc(doc(db, "v3_tournaments", id, "parts", "athletes"), athPartUpdates, { merge: true }));
+        }
+
+        if (teamAthletes !== undefined || teamInputAthletes !== undefined) {
+          const teamPartUpdates: any = {};
+          if (teamAthletes !== undefined) teamPartUpdates.teamAthletes = teamAthletes;
+          if (teamInputAthletes !== undefined) teamPartUpdates.teamInputAthletes = teamInputAthletes;
+          partsPromises.push(setDoc(doc(db, "v3_tournaments", id, "parts", "teamAthletes"), teamPartUpdates, { merge: true }));
+        }
+
+        if (commandCenterState !== undefined) {
+          partsPromises.push(setDoc(doc(db, "v3_tournaments", id, "parts", "commandCenter"), { commandCenterState }, { merge: true }));
+        }
+
+        if (scoreEvents !== undefined) {
+          partsPromises.push(setDoc(doc(db, "v3_tournaments", id, "parts", "scoreEvents"), { scoreEvents }, { merge: true }));
+        }
+
+        if (liveTimer !== undefined) {
+          partsPromises.push(setDoc(doc(db, "v3_tournaments", id, "parts", "liveTimer"), { liveTimer }, { merge: true }));
+        }
+
+        // Update the main document with the remaining non-heavy fields
+        if (Object.keys(mainUpdates).length > 0) {
+          partsPromises.push(updateDoc(tourRef, {
+            ...mainUpdates,
+            updatedAt: serverTimestamp()
+          }));
+        } else {
+          partsPromises.push(updateDoc(tourRef, {
+            updatedAt: serverTimestamp()
+          }));
+        }
+
+        await Promise.all(partsPromises);
 
         // Event-Driven V3 Ranking Engine trigger:
         // If scoring data, distances, status or rules are updated, synchronize to ledger and compute rankings/snapshots
@@ -437,9 +586,8 @@ export function updateOnlineTournament(id: string, updates: Partial<TournamentDa
 
         if (isScoringUpdate) {
           try {
-            const currentDoc = await getDoc(tourRef);
-            if (currentDoc.exists()) {
-              const data = normalizeFirestoreData(currentDoc.data() as any);
+            const data = await getCompleteTournamentData(id);
+            if (data) {
               const scoreEvents = data.scoreEvents || [];
               const matchName = data.matchName || data.tournamentName || "Giải đấu VSC";
               const isMixed = data.tournamentFormat === "mixed";
@@ -492,11 +640,8 @@ export function updateOnlineTournament(id: string, updates: Partial<TournamentDa
 export async function updateOnlineTournamentTimer(id: string, timerData: LiveTimerConfig) {
   try {
     if (!id) return;
-    const tourRef = doc(db, "v3_tournaments", id);
-    await updateDoc(tourRef, {
-      liveTimer: timerData,
-      updatedAt: serverTimestamp()
-    });
+    const timerRef = doc(db, "v3_tournaments", id, "parts", "liveTimer");
+    await setDoc(timerRef, { liveTimer: timerData }, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `v3_tournaments/${id}/liveTimer`);
   }
@@ -515,23 +660,100 @@ export async function deleteOnlineTournament(id: string) {
 }
 
 /**
+ * Fetches and combines a single tournament document and its partitioned sub-documents
+ */
+export async function getCompleteTournamentData(id: string): Promise<TournamentData | null> {
+  try {
+    const mainRef = doc(db, "v3_tournaments", id);
+    const athletesRef = doc(db, "v3_tournaments", id, "parts", "athletes");
+    const teamAthletesRef = doc(db, "v3_tournaments", id, "parts", "teamAthletes");
+    const commandCenterRef = doc(db, "v3_tournaments", id, "parts", "commandCenter");
+    const scoreEventsRef = doc(db, "v3_tournaments", id, "parts", "scoreEvents");
+    const liveTimerRef = doc(db, "v3_tournaments", id, "parts", "liveTimer");
+
+    const [
+      mainSnap,
+      athletesSnap,
+      teamAthletesSnap,
+      commandCenterSnap,
+      scoreEventsSnap,
+      liveTimerSnap
+    ] = await Promise.all([
+      getDoc(mainRef),
+      getDoc(athletesRef),
+      getDoc(teamAthletesRef),
+      getDoc(commandCenterRef),
+      getDoc(scoreEventsRef),
+      getDoc(liveTimerRef)
+    ]);
+
+    if (!mainSnap.exists()) return null;
+
+    const mainData = normalizeFirestoreData(mainSnap.data());
+    const athletesData = athletesSnap.exists() ? normalizeFirestoreData(athletesSnap.data()) : null;
+    const teamAthletesData = teamAthletesSnap.exists() ? normalizeFirestoreData(teamAthletesSnap.data()) : null;
+    const commandCenterData = commandCenterSnap.exists() ? normalizeFirestoreData(commandCenterSnap.data()) : null;
+    const scoreEventsData = scoreEventsSnap.exists() ? normalizeFirestoreData(scoreEventsSnap.data()) : null;
+    const liveTimerData = liveTimerSnap.exists() ? normalizeFirestoreData(liveTimerSnap.data()) : null;
+
+    return {
+      ...mainData,
+      id,
+      athletes: athletesData !== null ? (athletesData.athletes || []) : (mainData.athletes || []),
+      inputAthletes: athletesData !== null ? (athletesData.inputAthletes || []) : (mainData.inputAthletes || []),
+      teamAthletes: teamAthletesData !== null ? (teamAthletesData.teamAthletes || []) : (mainData.teamAthletes || []),
+      teamInputAthletes: teamAthletesData !== null ? (teamAthletesData.teamInputAthletes || []) : (mainData.teamInputAthletes || []),
+      commandCenterState: commandCenterData !== null ? (commandCenterData.commandCenterState || null) : (mainData.commandCenterState || null),
+      scoreEvents: scoreEventsData !== null ? (scoreEventsData.scoreEvents || []) : (mainData.scoreEvents || []),
+      liveTimer: liveTimerData !== null ? (liveTimerData.liveTimer || null) : (mainData.liveTimer || null),
+      matchName: mainData.tournamentName || mainData.matchName || mainData.name || "Giải đấu mới",
+    } as TournamentData;
+  } catch (error) {
+    console.error("Error fetching complete tournament data:", error);
+    return null;
+  }
+}
+
+/**
  * Subscribes to real-time list of tournaments sorted by latest createdAt
  */
 export function subscribeToTournamentsList(callback: (tournaments: TournamentData[]) => void) {
   const collectionRef = collection(db, "v3_tournaments");
   const q = query(collectionRef, orderBy("createdAt", "desc"));
   
-  return onSnapshot(q, (snapshot) => {
-    const list: TournamentData[] = [];
-    snapshot.forEach((docSnap) => {
+  return onSnapshot(q, async (snapshot) => {
+    const promises = snapshot.docs.map(async (docSnap) => {
+      const id = docSnap.id;
       const data = normalizeFirestoreData(docSnap.data());
-      list.push({
-        id: docSnap.id,
+      
+      const athletesRef = doc(db, "v3_tournaments", id, "parts", "athletes");
+      const teamAthletesRef = doc(db, "v3_tournaments", id, "parts", "teamAthletes");
+      
+      const [athSnap, teamSnap] = await Promise.all([
+        getDoc(athletesRef),
+        getDoc(teamAthletesRef)
+      ]);
+      
+      const athletesData = athSnap.exists() ? normalizeFirestoreData(athSnap.data()) : null;
+      const teamAthletesData = teamSnap.exists() ? normalizeFirestoreData(teamSnap.data()) : null;
+      
+      return {
+        id,
         ...data,
+        athletes: athletesData !== null ? (athletesData.athletes || []) : (data.athletes || []),
+        inputAthletes: athletesData !== null ? (athletesData.inputAthletes || []) : (data.inputAthletes || []),
+        teamAthletes: teamAthletesData !== null ? (teamAthletesData.teamAthletes || []) : (data.teamAthletes || []),
+        teamInputAthletes: teamAthletesData !== null ? (teamAthletesData.teamInputAthletes || []) : (data.teamInputAthletes || []),
         matchName: data.tournamentName || data.matchName || data.name || "Giải đấu mới",
-      } as TournamentData);
+      } as TournamentData;
     });
-    callback(list);
+
+    try {
+      const list = await Promise.all(promises);
+      callback(list);
+    } catch (err) {
+      console.error("Error fetching complete list items:", err);
+    }
   }, (error) => {
     handleFirestoreError(error, OperationType.LIST, "v3_tournaments");
   });
@@ -541,21 +763,83 @@ export function subscribeToTournamentsList(callback: (tournaments: TournamentDat
  * Subscribes to a single tournament documents in real-time
  */
 export function subscribeToTournamentDoc(id: string, callback: (tournament: TournamentData | null) => void) {
-  const docRef = doc(db, "v3_tournaments", id);
-  return onSnapshot(docRef, (docSnap) => {
-    if (docSnap.exists()) {
-      const data = normalizeFirestoreData(docSnap.data());
-      callback({
-        id: docSnap.id,
-        ...data,
-        matchName: data.tournamentName || data.matchName || data.name || "Giải đấu mới",
-      } as TournamentData);
+  const mainRef = doc(db, "v3_tournaments", id);
+  const athletesRef = doc(db, "v3_tournaments", id, "parts", "athletes");
+  const teamAthletesRef = doc(db, "v3_tournaments", id, "parts", "teamAthletes");
+  const commandCenterRef = doc(db, "v3_tournaments", id, "parts", "commandCenter");
+  const scoreEventsRef = doc(db, "v3_tournaments", id, "parts", "scoreEvents");
+  const liveTimerRef = doc(db, "v3_tournaments", id, "parts", "liveTimer");
+
+  let mainData: any = null;
+  let athletesData: any = null;
+  let teamAthletesData: any = null;
+  let commandCenterData: any = null;
+  let scoreEventsData: any = null;
+  let liveTimerData: any = null;
+
+  const triggerCallback = () => {
+    if (!mainData) {
+      callback(null);
+      return;
+    }
+
+    const merged: TournamentData = {
+      ...mainData,
+      id,
+      athletes: athletesData !== null ? (athletesData.athletes || []) : (mainData.athletes || []),
+      inputAthletes: athletesData !== null ? (athletesData.inputAthletes || []) : (mainData.inputAthletes || []),
+      teamAthletes: teamAthletesData !== null ? (teamAthletesData.teamAthletes || []) : (mainData.teamAthletes || []),
+      teamInputAthletes: teamAthletesData !== null ? (teamAthletesData.teamInputAthletes || []) : (mainData.teamInputAthletes || []),
+      commandCenterState: commandCenterData !== null ? (commandCenterData.commandCenterState || null) : (mainData.commandCenterState || null),
+      scoreEvents: scoreEventsData !== null ? (scoreEventsData.scoreEvents || []) : (mainData.scoreEvents || []),
+      liveTimer: liveTimerData !== null ? (liveTimerData.liveTimer || null) : (mainData.liveTimer || null),
+      matchName: mainData.tournamentName || mainData.matchName || mainData.name || "Giải đấu mới",
+    };
+    callback(merged);
+  };
+
+  const unsubMain = onSnapshot(mainRef, (snap) => {
+    if (snap.exists()) {
+      mainData = normalizeFirestoreData(snap.data());
+      triggerCallback();
     } else {
       callback(null);
     }
-  }, (error) => {
-    handleFirestoreError(error, OperationType.GET, `v3_tournaments/${id}`);
+  }, (err) => handleFirestoreError(err, OperationType.GET, `v3_tournaments/${id}`));
+
+  const unsubAthletes = onSnapshot(athletesRef, (snap) => {
+    athletesData = snap.exists() ? normalizeFirestoreData(snap.data()) : null;
+    triggerCallback();
   });
+
+  const unsubTeamAthletes = onSnapshot(teamAthletesRef, (snap) => {
+    teamAthletesData = snap.exists() ? normalizeFirestoreData(snap.data()) : null;
+    triggerCallback();
+  });
+
+  const unsubCommandCenter = onSnapshot(commandCenterRef, (snap) => {
+    commandCenterData = snap.exists() ? normalizeFirestoreData(snap.data()) : null;
+    triggerCallback();
+  });
+
+  const unsubScoreEvents = onSnapshot(scoreEventsRef, (snap) => {
+    scoreEventsData = snap.exists() ? normalizeFirestoreData(snap.data()) : null;
+    triggerCallback();
+  });
+
+  const unsubLiveTimer = onSnapshot(liveTimerRef, (snap) => {
+    liveTimerData = snap.exists() ? normalizeFirestoreData(snap.data()) : null;
+    triggerCallback();
+  });
+
+  return () => {
+    unsubMain();
+    unsubAthletes();
+    unsubTeamAthletes();
+    unsubCommandCenter();
+    unsubScoreEvents();
+    unsubLiveTimer();
+  };
 }
 
 /**
@@ -790,26 +1074,11 @@ export async function getVscSystemAthletes(): Promise<Athlete[]> {
     const list: Athlete[] = [];
     querySnap.forEach((docSnap) => {
       const data = docSnap.data() as any;
-      let avatarUrl = data.avatarUrl;
-      if (avatarUrl && typeof avatarUrl === "string" && avatarUrl.startsWith("local-avatar:")) {
-        const id = avatarUrl.split(":")[1] || docSnap.id;
-        try {
-          const stored = localStorage.getItem(`vsc-avatar-${id}`);
-          if (stored) {
-            avatarUrl = stored;
-          } else {
-            avatarUrl = "";
-          }
-        } catch (e) {
-          console.warn("Failed to get local avatar in getVscSystemAthletes", e);
-          avatarUrl = "";
-        }
-      }
       list.push({
         id: docSnap.id,
         athleteId: docSnap.id,
         ...data,
-        avatarUrl
+        avatarUrl: data.avatarUrl || data.avatar || ""
       } as unknown as Athlete);
     });
     return list;
@@ -828,26 +1097,11 @@ export function subscribeToVscSystemAthletes(callback: (athletes: Athlete[]) => 
     const list: Athlete[] = [];
     querySnap.forEach((docSnap) => {
       const data = docSnap.data() as any;
-      let avatarUrl = data.avatarUrl;
-      if (avatarUrl && typeof avatarUrl === "string" && avatarUrl.startsWith("local-avatar:")) {
-        const id = avatarUrl.split(":")[1] || docSnap.id;
-        try {
-          const stored = localStorage.getItem(`vsc-avatar-${id}`);
-          if (stored) {
-            avatarUrl = stored;
-          } else {
-            avatarUrl = "";
-          }
-        } catch (e) {
-          console.warn("Failed to get local avatar in subscribeToVscSystemAthletes", e);
-          avatarUrl = "";
-        }
-      }
       list.push({
         id: docSnap.id,
         athleteId: docSnap.id,
         ...data,
-        avatarUrl
+        avatarUrl: data.avatarUrl || data.avatar || ""
       } as unknown as Athlete);
     });
     callback(list);
@@ -1725,9 +1979,8 @@ export async function calculateAndSaveSnapshotsFromLedger(
     }
 
     const tourRef = doc(db, "v3_tournaments", tournamentId);
-    const tourSnap = await getDoc(tourRef);
-    if (!tourSnap.exists()) return;
-    const tourData = normalizeFirestoreData(tourSnap.data() as any);
+    const tourData = await getCompleteTournamentData(tournamentId) as any;
+    if (!tourData) return;
     
     // Deduplicate base athletes by ID to prevent any duplicates
     const rawBaseAthletes = isIndividual ? (tourData.athletes || []) : (tourData.teamAthletes || []);

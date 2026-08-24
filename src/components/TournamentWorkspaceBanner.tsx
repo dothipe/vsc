@@ -46,17 +46,21 @@ export function TournamentWorkspaceBanner({
               Mùa giải: {currentTournamentDoc?.season || "VSC 2026"}
             </span>
             <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${
-              currentTournamentDoc?.status === "live" 
+              (currentTournamentDoc?.status === "live" || commandCenterState?.workflowStage === "competition" || commandCenterState?.workflowStage === "team_competition" || commandCenterState?.workflowStage === "check_in" || commandCenterState?.workflowStage === "qualification" || commandCenterState?.workflowStage === "elimination") 
                 ? "bg-rose-500/10 text-rose-400 border border-rose-500/20 animate-pulse" 
                 : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
             }`}>
               Trạng thái: {
-                currentTournamentDoc?.status === "draft" ? "Bản Nháp" :
-                currentTournamentDoc?.status === "registration" ? "Đang Đăng Ký" :
-                currentTournamentDoc?.status === "ready" ? "Sẵn Sàng" :
-                currentTournamentDoc?.status === "live" ? "Đang Diễn Ra (LIVE)" :
-                currentTournamentDoc?.status === "completed" ? "Đã Kết Thúc" :
-                currentTournamentDoc?.status === "archived" ? "Lưu Trữ" : (currentTournamentDoc?.status || "Bản Nháp")
+                (() => {
+                  const resolvedStatus = commandCenterState?.workflowStage || currentTournamentDoc?.status || "draft";
+                  if (resolvedStatus === "draft") return "Bản Nháp";
+                  if (resolvedStatus === "registration" || resolvedStatus === "registration_open") return "Đang Đăng Ký";
+                  if (resolvedStatus === "ready") return "Sẵn Sàng";
+                  if (resolvedStatus === "live" || resolvedStatus === "competition" || resolvedStatus === "team_competition" || resolvedStatus === "check_in" || resolvedStatus === "qualification" || resolvedStatus === "elimination") return "Đang Diễn Ra (LIVE)";
+                  if (resolvedStatus === "completed") return "Đã Kết Thúc";
+                  if (resolvedStatus === "archived") return "Lưu Trữ";
+                  return "Bản Nháp";
+                })()
               }
             </span>
           </div>

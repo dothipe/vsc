@@ -98,7 +98,7 @@ service cloud.firestore {
       allow update: if isReferee() || 
         (isSignedIn() && (resource.data.creatorId == request.auth.uid || 
                           resource.data.creatorEmail == request.auth.token.email)) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views', 'updatedAt']));
+        (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['athletes', 'teamAthletes', 'views', 'updatedAt']));
       allow delete: if isReferee() || 
         (isSignedIn() && (resource.data.creatorId == request.auth.uid || 
                           resource.data.creatorEmail == request.auth.token.email));
@@ -110,10 +110,19 @@ service cloud.firestore {
       allow update: if isReferee() || 
         (isSignedIn() && (resource.data.creatorId == request.auth.uid || 
                           resource.data.creatorEmail == request.auth.token.email)) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views', 'updatedAt']));
+        (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['athletes', 'teamAthletes', 'views', 'updatedAt']));
       allow delete: if isReferee() || 
         (isSignedIn() && (resource.data.creatorId == request.auth.uid || 
                           resource.data.creatorEmail == request.auth.token.email));
+
+      match /parts/{partId} {
+        allow read: if true;
+        allow write: if isReferee() || 
+          (isSignedIn() && (!exists(/databases/$(database)/documents/v3_tournaments/$(id)) || 
+                            (exists(/databases/$(database)/documents/v3_tournaments/$(id)) && 
+                             (get(/databases/$(database)/documents/v3_tournaments/$(id)).data.creatorId == request.auth.uid || 
+                              get(/databases/$(database)/documents/v3_tournaments/$(id)).data.creatorEmail == request.auth.token.email))));
+      }
     }
 
     // 10. official_score_ledger

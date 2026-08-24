@@ -1,10 +1,50 @@
 import { BaseRepository } from "./base.repository";
 import { TournamentV3, TournamentHistoryV3, DistanceConfigV3 } from "../types";
 import { db, collection, query, getDocs, writeBatch } from "../firebase";
+import { 
+  getCompleteTournamentData, 
+  updateOnlineTournament, 
+  subscribeToTournamentsList, 
+  subscribeToTournamentDoc 
+} from "../lib/firebaseService";
 
 export class TournamentRepository extends BaseRepository<TournamentV3> {
   constructor() {
     super("v3_tournaments");
+  }
+
+  override async get(id: string, userId?: string, userRole?: string): Promise<TournamentV3 | null> {
+    return await getCompleteTournamentData(id) as any;
+  }
+
+  override async create(id: string, data: Omit<TournamentV3, "id"> & { id?: string }, userId?: string, userRole?: string): Promise<TournamentV3> {
+    const payload = { ...data, id };
+    await updateOnlineTournament(id, payload as any);
+    return payload as any;
+  }
+
+  override async update(id: string, data: Partial<TournamentV3>, userId?: string, userRole?: string): Promise<void> {
+    await updateOnlineTournament(id, data as any);
+  }
+
+  override subscribe(
+    id: string, 
+    callback: (data: TournamentV3 | null) => void, 
+    onError?: (error: any) => void, 
+    userId?: string, 
+    userRole?: string
+  ): () => void {
+    return subscribeToTournamentDoc(id, callback as any);
+  }
+
+  override subscribeList(
+    constraints: any[] = [], 
+    callback: (data: TournamentV3[]) => void, 
+    onError?: (error: any) => void, 
+    userId?: string, 
+    userRole?: string
+  ): () => void {
+    return subscribeToTournamentsList(callback as any);
   }
 
   /**

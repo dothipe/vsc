@@ -19,6 +19,7 @@ import {
   subscribeToTournamentsList
 } from "../lib/firebaseService";
 import { calculateAthleteCareerStats } from "../utils/careerCalculator";
+import { compressLogo, compressBanner } from "../utils/imageCompressor";
 import { 
   Building, 
   Users, 
@@ -492,82 +493,28 @@ export function ClubManagement({ currentUser, userRole }: ClubManagementProps) {
     await saveVscSystemAthletes(legacyAthletes);
   };
 
-  const compressImageBase64 = (
-    base64Str: string,
-    maxWidth: number,
-    maxHeight: number,
-    quality: number = 0.75
-  ): Promise<string> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.src = base64Str;
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
-        } else {
-          if (height > maxHeight) {
-            width = Math.round((width * maxHeight) / height);
-            height = maxHeight;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          resolve(base64Str);
-          return;
-        }
-
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
-      };
-      img.onerror = () => {
-        resolve(base64Str);
-      };
-    });
-  };
-
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64 = event.target?.result as string;
-      try {
-        const compressed = await compressImageBase64(base64, 250, 250, 0.8);
-        setFormFields((prev) => ({ ...prev, logoUrl: compressed, logo: compressed }));
-      } catch (err) {
-        setFormFields((prev) => ({ ...prev, logoUrl: base64, logo: base64 }));
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressLogo(file);
+      setFormFields((prev) => ({ ...prev, logoUrl: compressed, logo: compressed }));
+    } catch (err) {
+      console.error("Lỗi nén logo CLB:", err);
+    }
   };
 
-  const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64 = event.target?.result as string;
-      try {
-        const compressed = await compressImageBase64(base64, 800, 400, 0.75);
-        setFormFields((prev) => ({ ...prev, bannerUrl: compressed, banner: compressed }));
-      } catch (err) {
-        setFormFields((prev) => ({ ...prev, bannerUrl: base64, banner: base64 }));
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressBanner(file);
+      setFormFields((prev) => ({ ...prev, bannerUrl: compressed, banner: compressed }));
+    } catch (err) {
+      console.error("Lỗi nén banner CLB:", err);
+    }
   };
 
   // Club Create / Edit

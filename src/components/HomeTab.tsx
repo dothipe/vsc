@@ -156,10 +156,43 @@ export function HomeTab({
                 )}
 
                 {/* Floating Status Badge top-left */}
-                <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 border border-emerald-150 dark:border-emerald-900/40 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-                  {tour.status === "live" ? "ĐANG BẮN" : tour.status === "registration" ? "ĐANG ĐĂNG KÝ" : tour.status === "ready" ? "SẴN SÀNG" : "BẢN NHÁP"}
-                </div>
+                {(() => {
+                  let statusLabel = "BẢN NHÁP";
+                  let badgeColors = "bg-slate-50 dark:bg-slate-900/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800";
+                  let dotColor = "bg-slate-400";
+                  let animateDot = false;
+
+                  if (tour.status === "live") {
+                    statusLabel = "ĐANG BẮN";
+                    badgeColors = "bg-emerald-50 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 border-emerald-150 dark:border-emerald-900/40";
+                    dotColor = "bg-emerald-500";
+                    animateDot = true;
+                  } else if (tour.status === "registration") {
+                    statusLabel = "ĐANG ĐĂNG KÝ";
+                    badgeColors = "bg-blue-50 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 border-blue-150 dark:border-blue-900/40";
+                    dotColor = "bg-blue-500";
+                    animateDot = true;
+                  } else if (tour.status === "ready") {
+                    statusLabel = "SẴN SÀNG";
+                    badgeColors = "bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 border-indigo-150 dark:border-indigo-900/40";
+                    dotColor = "bg-indigo-500";
+                  } else if (tour.status === "completed") {
+                    statusLabel = "HOÀN THÀNH";
+                    badgeColors = "bg-amber-50 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 border-amber-150 dark:border-amber-900/40";
+                    dotColor = "bg-amber-500";
+                  } else if (tour.status === "archived") {
+                    statusLabel = "LƯU TRỮ";
+                    badgeColors = "bg-rose-50 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 border-rose-150 dark:border-rose-900/40";
+                    dotColor = "bg-rose-500";
+                  }
+
+                  return (
+                    <div className={`absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 ${badgeColors} border rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${dotColor} ${animateDot ? "animate-pulse" : ""} shrink-0`}></span>
+                      {statusLabel}
+                    </div>
+                  );
+                })()}
 
                 {/* Floating Admin / Format Badge top-right */}
                 {currentUser && (tour.creatorId === currentUser.uid || tour.creatorEmail === currentUser.email) && (

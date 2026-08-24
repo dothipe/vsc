@@ -84,27 +84,18 @@ export const AssignmentsTab: React.FC<AssignmentsTabProps> = ({
     
     let avatarUrl = lane.avatarUrl || (athlete ? (athlete.avatarUrl || athlete.avatar) : null);
     
-    // Fallback to globalMasterAthletes if not found in athletesList
-    if (!avatarUrl && athlete?.isMasterAthlete && athlete?.masterAthleteId) {
-      const found = globalMasterAthletes.find((a) => a.id === athlete.masterAthleteId);
-      if (found) {
-        avatarUrl = found.avatarUrl || found.avatar;
+    // Fallback to globalMasterAthletes if not found in athletesList or stripped
+    if (!avatarUrl || avatarUrl.startsWith("data:image") === false) {
+      const targetId = athlete?.masterAthleteId || athlete?.athleteId || athlete?.participantId || athlete?.id || lane.participantId;
+      if (targetId) {
+        const found = globalMasterAthletes.find((a) => a.id === targetId || a.athleteId === targetId);
+        if (found) {
+          avatarUrl = found.avatarUrl || found.avatar || avatarUrl;
+        }
       }
     }
     
     let gender = athlete ? athlete.gender : "Nam";
-    
-    if (avatarUrl && typeof avatarUrl === "string" && avatarUrl.startsWith("local-avatar:")) {
-      const id = avatarUrl.split(":")[1] || lane.participantId || athlete?.id || athlete?.participantId || athlete?.masterAthleteId;
-      try {
-        const stored = localStorage.getItem(`vsc-avatar-${id}`);
-        if (stored) return stored;
-      } catch (e) {
-        console.warn("Failed to get local avatar in AssignmentsTab", e);
-      }
-      return gender === "Nữ" ? AVATAR_FEMALE : AVATAR_MALE;
-    }
-    
     return avatarUrl || (gender === "Nữ" ? AVATAR_FEMALE : AVATAR_MALE);
   };
 

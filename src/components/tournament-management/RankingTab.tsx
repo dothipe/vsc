@@ -8,24 +8,17 @@ interface RankingTabProps {
 
 export const RankingTab: React.FC<RankingTabProps> = ({ athletesList, globalMasterAthletes = [] }) => {
   const resolveAthleteAvatar = (vdv: any) => {
+    if (!vdv) return AVATAR_MALE;
     let avatarUrl = vdv.avatarUrl || vdv.avatar || null;
     
-    if (!avatarUrl && vdv.isMasterAthlete && vdv.masterAthleteId) {
-      const found = globalMasterAthletes.find((a) => a.id === vdv.masterAthleteId);
-      if (found) {
-        avatarUrl = found.avatarUrl || found.avatar || null;
+    if (!avatarUrl || avatarUrl.startsWith("data:image") === false) {
+      const targetId = vdv.masterAthleteId || vdv.athleteId || vdv.participantId || vdv.id;
+      if (targetId) {
+        const found = globalMasterAthletes.find((a) => a.id === targetId || a.athleteId === targetId);
+        if (found) {
+          avatarUrl = found.avatarUrl || found.avatar || avatarUrl;
+        }
       }
-    }
-    
-    if (avatarUrl && typeof avatarUrl === "string" && avatarUrl.startsWith("local-avatar:")) {
-      const id = avatarUrl.split(":")[1] || vdv.id || vdv.participantId || vdv.masterAthleteId;
-      try {
-        const stored = localStorage.getItem(`vsc-avatar-${id}`);
-        if (stored) return stored;
-      } catch (e) {
-        console.warn("Failed to get local avatar in RankingTab", e);
-      }
-      return vdv.gender === "Nữ" ? AVATAR_FEMALE : AVATAR_MALE;
     }
     
     return avatarUrl || (vdv.gender === "Nữ" ? AVATAR_FEMALE : AVATAR_MALE);

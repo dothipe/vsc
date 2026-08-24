@@ -321,6 +321,47 @@ export function useCommandCenterState({
         showToast("error", "Kiểm tra thất bại", "Vui lòng hoàn thành toàn bộ danh sách kiểm tra (Ready Checklist) trước khi Go Live!");
         return;
       }
+
+      // Automatically assign BIBs for athletes that have not drawn yet
+      const targetAthletes = getActiveAthletesList();
+      const preExistingBibs = new Set(
+        targetAthletes
+          .map((a: any) => a.bibNumber)
+          .filter(Boolean) as string[]
+      );
+
+      let bibCounter = 1;
+      const pad = (num: number, size: number) => num.toString().padStart(size, '0');
+      const getNextAvailableBib = () => {
+        while (true) {
+          const bib = `BIB-${pad(bibCounter++, 3)}`;
+          if (!preExistingBibs.has(bib)) {
+            return bib;
+          }
+        }
+      };
+
+      let changed = false;
+      const updated = targetAthletes.map((ath: any) => {
+        if (ath.bibNumber) return ath;
+        changed = true;
+        const generatedBib = getNextAvailableBib();
+        return {
+          ...ath,
+          idCard: generatedBib,
+          bibNumber: generatedBib,
+          status: ath.status || "checked_in",
+          checkInStatus: ath.checkInStatus || "checked_in",
+        };
+      });
+
+      if (changed) {
+        activeSetterAndCloud(updated).then(() => {
+          showToast("success", "Cấp BIB tự động", "Đã tự động bốc thăm và cấp số hiệu BIB ngẫu nhiên cho các VĐV chưa bốc!");
+        }).catch(err => {
+          console.error("Auto-BIB assignment failed:", err);
+        });
+      }
     }
 
     const mapWorkflowStageToStatus = (stage: string): string => {
@@ -415,7 +456,7 @@ export function useCommandCenterState({
 
     addAuditLog("WORKFLOW_TRANSITION", `Chuyển trạng thái tiến độ giải đấu sang: ${stagesMap[nextStage] || nextStage}.`);
     showToast("success", "Thành công", `Đã chuyển sang giai đoạn ${stagesMap[nextStage] || nextStage}!`);
-  }, [userRole, getIsChecklistValid, localState.competitionActiveTab, setCompetitionMode, setCommandCenterState, activeHistoryId, addAuditLog, showToast]);
+  }, [userRole, getIsChecklistValid, localState.competitionActiveTab, setCompetitionMode, setCommandCenterState, activeHistoryId, addAuditLog, showToast, getActiveAthletesList, activeSetterAndCloud]);
 
   const handleToggleCheckIn = useCallback(async (athleteId: string) => {
     const updated = getActiveAthletesList().map((ath) => {

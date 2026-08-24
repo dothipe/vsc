@@ -54,45 +54,13 @@ import {
 import * as XLSX from "xlsx";
 import { VIETNAM_PROVINCES, WORLD_COUNTRIES } from "../utils/geography";
 import { usePermission } from "../providers/PermissionProvider";
+import { compressAvatar } from "../utils/imageCompressor";
 
 export const AVATAR_MALE = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23e2e8f0'/><circle cx='50' cy='38' r='20' fill='%23475569'/><path d='M22 85c0-14 11-22 28-22s28 8 28 22z' fill='%23475569'/></svg>";
 export const AVATAR_FEMALE = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23fce7f3'/><circle cx='50' cy='38' r='20' fill='%23db2777'/><path d='M22 85c0-14 11-22 28-22s28 8 28 22z' fill='%23db2777'/></svg>";
 
 export const compressAvatarImage = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          resolve(e.target?.result as string);
-          return;
-        }
-
-        // Highly optimized target size for fast avatar uploading and loading: 120x120
-        const size = 120;
-        canvas.width = size;
-        canvas.height = size;
-
-        // Draw cropped to square
-        const minDim = Math.min(img.width, img.height);
-        const sx = (img.width - minDim) / 2;
-        const sy = (img.height - minDim) / 2;
-
-        ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
-        
-        // Output highly compressed, optimized JPEG for lightning-fast database writes & reads
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.5);
-        resolve(dataUrl);
-      };
-      img.onerror = () => reject(new Error("Lỗi tải ảnh"));
-      img.src = e.target?.result as string;
-    };
-    reader.onerror = () => reject(new Error("Lỗi đọc tệp"));
-    reader.readAsDataURL(file);
-  });
+  return compressAvatar(file);
 };
 
 interface AthleteRegistryProps {

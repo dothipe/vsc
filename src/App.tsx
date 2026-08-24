@@ -643,25 +643,16 @@ export default function App() {
 
   // Delete an athlete
   const handleDeleteAthlete = (athleteId: string) => {
-    let nextAthletes = athletes;
-    let nextTeamAthletes = teamAthletes;
+    let nextAthletes = athletes.filter((a) => a.id !== athleteId && a.participantId !== athleteId);
+    let nextTeamAthletes = teamAthletes.filter((a) => a.id !== athleteId && a.participantId !== athleteId);
 
-    if (competitionMode === "individual") {
-      setAthletes((prev) => {
-        nextAthletes = prev.filter((a) => a.id !== athleteId);
-        return nextAthletes;
-      });
-    } else {
-      setTeamAthletes((prev) => {
-        nextTeamAthletes = prev.filter((a) => a.id !== athleteId);
-        return nextTeamAthletes;
-      });
-    }
+    setAthletes(nextAthletes);
+    setTeamAthletes(nextTeamAthletes);
 
     if (activeHistoryId && activeHistoryId.startsWith("tour-")) {
       updateOnlineTournament(activeHistoryId, {
-        athletes: competitionMode === "individual" ? nextAthletes.filter((a) => a.id !== athleteId) : athletes,
-        teamAthletes: competitionMode !== "individual" ? nextTeamAthletes.filter((a) => a.id !== athleteId) : teamAthletes
+        athletes: nextAthletes,
+        teamAthletes: nextTeamAthletes
       }).catch((err) => console.error("Firestore sync error on delete athlete:", err));
     }
   };

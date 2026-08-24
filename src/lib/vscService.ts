@@ -32,7 +32,13 @@ import {
   HallOfFameV2,
   LaneV2
 } from "../types";
-import { normalizeFirestoreData } from "./firebaseService";
+import { 
+  normalizeFirestoreData, 
+  sanitizeFirestoreData,
+  getCompleteTournamentData,
+  updateOnlineTournament,
+  subscribeToTournamentsList
+} from "./firebaseService";
 
 // Helper to sanitize undefined values for Firestore
 function sanitizeData<T>(obj: T): T {
@@ -188,21 +194,16 @@ export const SeasonService = {
 // TOURNAMENTS SERVICE
 export const TournamentService = {
   async getTournament(tournamentId: string): Promise<any | null> {
-    const docSnap = await getDoc(doc(db, "v3_tournaments", tournamentId));
-    return docSnap.exists() ? normalizeFirestoreData(docSnap.data() as any) : null;
+    return await getCompleteTournamentData(tournamentId);
   },
 
   async saveTournament(tournament: any): Promise<void> {
-    const sanitized = sanitizeData({
-      ...tournament,
-      createdAt: tournament.createdAt || serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    await setDoc(doc(db, "v3_tournaments", tournament.tournamentId || tournament.id), sanitized);
+    const id = tournament.tournamentId || tournament.id;
+    await updateOnlineTournament(id, tournament);
 
     if (tournament.status === "completed") {
       // Trigger automatic results, rankings, athlete/club synchronization, and Hall of Fame!
-      await generateTournamentResults(tournament.tournamentId || tournament.id, tournament.seasonId || tournament.season);
+      await generateTournamentResults(id, tournament.seasonId || tournament.season);
     }
   },
 
@@ -211,15 +212,16 @@ export const TournamentService = {
   },
 
   async getAllTournaments(): Promise<any[]> {
-    const querySnap = await getDocs(collection(db, "v3_tournaments"));
-    return querySnap.docs.map(d => normalizeFirestoreData(d.data() as any));
+    return new Promise((resolve) => {
+      const unsub = subscribeToTournamentsList((list) => {
+        unsub();
+        resolve(list);
+      });
+    });
   },
 
   subscribeToTournaments(callback: (tournaments: any[]) => void) {
-    const q = query(collection(db, "v3_tournaments"), orderBy("createdAt", "desc"));
-    return onSnapshot(q, (snap) => {
-      callback(snap.docs.map(d => normalizeFirestoreData(d.data() as any)));
-    });
+    return subscribeToTournamentsList(callback);
   }
 };
 

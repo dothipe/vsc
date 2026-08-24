@@ -11,7 +11,7 @@ import {
   hasPermission
 } from "../foundation/permissions";
 import { auth, db } from "../firebase";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
 import { 
   PermissionEngineV3, 
   RoleV3, 
@@ -96,11 +96,23 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             systemScopes: data.systemScopes || []
           });
         } else {
-          // Default profile if document doesn't exist yet
+          // Default profile if document doesn't exist yet: let's create it in Firestore!
+          const isFirstAdmin = user.email === "nahnatofficial@gmail.com";
+          const defaultRole = isFirstAdmin ? "admin" : (gRole === "system_owner" ? "system_owner" : gRole === "admin" ? "admin" : "viewer");
+          
+          setDoc(userRef, {
+            uid: user.uid,
+            email: user.email || "",
+            displayName: user.displayName || (user.email ? user.email.split("@")[0] : "User"),
+            photoURL: user.photoURL || "",
+            role: defaultRole,
+            createdAt: serverTimestamp()
+          }).catch(err => console.error("Error auto-creating user profile in PermissionProvider:", err));
+
           setUserProfile({
             uid: user.uid,
             email: user.email || "",
-            role: gRole === "system_owner" ? "system_owner" : gRole === "admin" ? "admin" : "viewer",
+            role: defaultRole,
             permissions: [],
             organization: "",
             clubId: "",

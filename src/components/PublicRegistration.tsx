@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Athlete, TournamentV3, COMPETITION_CATEGORIES } from "../types";
 import { tournamentRepository } from "../repositories/tournament.repository";
 import { subscribeToVscSystemAthletes, subscribeToVscSystemClubs, getUserProfile, coordinateLinkAthlete } from "../lib/firebaseService";
@@ -28,7 +28,8 @@ import {
   Trash2,
   Dices,
   Printer,
-  Fingerprint
+  Fingerprint,
+  User
 } from "lucide-react";
 
 interface PublicRegistrationProps {
@@ -212,10 +213,43 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
   }, [pendingSystemAthlete, athletesList]);
 
   // Find the exact athlete profile matching the logged-in user (MUST be linked to their verified or pending system athlete account, or matching their registrations)
+  const isSelf = useCallback((athlete: any) => {
+    if (!athlete || !currentUser) return false;
+    
+    // 1. If user has an official linked system athlete profile
+    if (linkedSystemAthlete) {
+      return athlete.masterAthleteId === linkedSystemAthlete.id || 
+             (athlete.vscNumber && athlete.vscNumber === linkedSystemAthlete.vscNumber);
+    }
+    
+    // 2. If user has an official pending review linked athlete profile
+    if (pendingSystemAthlete) {
+      return athlete.masterAthleteId === pendingSystemAthlete.id || 
+             (athlete.vscNumber && athlete.vscNumber === pendingSystemAthlete.vscNumber);
+    }
+    
+    // 3. If the registered athlete was marked as registered for someone else (ghi danh hộ)
+    if (athlete.isRegisteringForSomeoneElse) {
+      return false;
+    }
+    
+    // 4. Loose fallback checks for unlinked public registrations
+    const isEmailMatch = currentUser.email && athlete.email?.trim().toLowerCase() === currentUser.email.trim().toLowerCase();
+    const isVscMatch = userProfile?.vscNumber && athlete.vscNumber && athlete.vscNumber === userProfile.vscNumber;
+    const isNameMatch = currentUser.displayName && (athlete.fullName || athlete.name)?.trim().toLowerCase() === currentUser.displayName.trim().toLowerCase();
+    
+    return !!(isEmailMatch || isVscMatch || isNameMatch);
+  }, [currentUser, linkedSystemAthlete, pendingSystemAthlete, userProfile]);
+
   const userAthleteProfile = useMemo(() => {
     if (!currentUser) return null;
-    return ownRegisteredAthlete || pendingRegisteredAthlete || (myRegisteredAthletes && myRegisteredAthletes.length > 0 ? myRegisteredAthletes[0] : null);
-  }, [currentUser, ownRegisteredAthlete, pendingRegisteredAthlete, myRegisteredAthletes]);
+    if (ownRegisteredAthlete) return ownRegisteredAthlete;
+    if (pendingRegisteredAthlete) return pendingRegisteredAthlete;
+
+    // Find the first registered athlete that matches the user's details (is themselves)
+    const selfMatch = myRegisteredAthletes.find(a => isSelf(a));
+    return selfMatch || null;
+  }, [currentUser, ownRegisteredAthlete, pendingRegisteredAthlete, myRegisteredAthletes, isSelf]);
 
   // Stage checks for BIB draw permissions:
   // Step 1: Registration (registration / registration_open) -> VĐV đăng ký, chưa mở bốc thăm BIB
@@ -244,7 +278,16 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
       }
       return;
     }
-    setSelectedAthleteForDraw(athleteToDraw || userAthleteProfile || (myRegisteredAthletes && myRegisteredAthletes.length > 0 ? myRegisteredAthletes[0] : null));
+    const target = athleteToDraw || userAthleteProfile;
+    if (!target) {
+      alert("⚠️ Không tìm thấy hồ sơ VĐV để bốc thăm!");
+      return;
+    }
+    if (!isSelf(target)) {
+      alert("⚠️ Bạn chỉ được phép tự bốc thăm số BIB cho chính mình, không được bốc hộ vận động viên khác!");
+      return;
+    }
+    setSelectedAthleteForDraw(target);
     setIsDrawModalOpen(true);
   };
 
@@ -498,6 +541,27 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
       avatarUrl = userProfile.customAvatarUrl || userProfile.avatarUrl || "";
     }
     
+    // Dynamic Font Scaling and Wrapping logic for long athlete name and club/team name
+    const athleteName = (athlete.fullName || athlete.name || "").trim();
+    const nameLength = athleteName.length;
+    let nameFontSizeClass = "text-2xl";
+    if (nameLength > 30) {
+      nameFontSizeClass = "text-sm";
+    } else if (nameLength > 22) {
+      nameFontSizeClass = "text-base";
+    } else if (nameLength > 15) {
+      nameFontSizeClass = "text-lg";
+    }
+
+    const clubNameStr = (athlete.clubName || athlete.team || "Tự Do").trim();
+    const clubLength = clubNameStr.length;
+    let clubFontSizeClass = "text-xs";
+    if (clubLength > 25) {
+      clubFontSizeClass = "text-[9px] leading-tight";
+    } else if (clubLength > 15) {
+      clubFontSizeClass = "text-[10px] leading-tight";
+    }
+    
     return (
       <div className="flex flex-col items-center space-y-4">
         {/* Printable Card Frame (Ratio approximately 4x6) */}
@@ -511,10 +575,10 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
             <div className="absolute w-[350px] h-[350px] rounded-full border-[10px] border-red-500" />
             <div className="absolute w-[250px] h-[250px] rounded-full border-[8px] border-red-500" />
           </div>
-
+ 
           {/* Realistic lanyard slot at top center */}
           <div className="absolute top-2 left-1/2 -translate-x-1/2 w-12 h-2.5 bg-slate-200 dark:bg-slate-800 rounded-full border border-slate-300 dark:border-slate-700/50" />
-
+ 
           {/* 1. VSC OFFICIAL ATHLETE & ID VSC Header */}
           <div className="text-center pt-2 space-y-1 z-10">
             <span className="inline-block px-3 py-0.5 bg-gradient-to-r from-red-600 to-rose-650 text-white text-[9px] font-black rounded-full uppercase tracking-widest">
@@ -524,15 +588,15 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
               ID VSC: <span className="font-bold text-red-600 dark:text-red-400">{vscId}</span>
             </div>
           </div>
-
+ 
           {/* 2. TÊN VĐV (Size lớn, bôi đậm, dễ nhìn) */}
           <div className="text-center my-0.5 z-10 px-2">
             <span className="text-[8px] text-red-500 dark:text-red-400 uppercase font-mono tracking-wider block mb-0.5">VẬN ĐỘNG VIÊN</span>
-            <h2 className="text-2xl font-black text-slate-950 dark:text-white uppercase tracking-tight leading-tight line-clamp-1">
-              {athlete.fullName || athlete.name}
+            <h2 className={`${nameFontSizeClass} font-black text-slate-950 dark:text-white uppercase tracking-tight leading-tight line-clamp-2 break-words`}>
+              {athleteName}
             </h2>
           </div>
-
+ 
           {/* 3. Số BIB | Tên CLB */}
           <div className="bg-red-50/20 dark:bg-red-950/5 border border-red-500 dark:border-red-600 rounded-2xl p-3 text-center z-10 space-y-1">
             <div className="flex justify-around items-center gap-2">
@@ -545,8 +609,8 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
               <div className="h-6 w-[1px] bg-red-500 dark:bg-red-600" />
               <div className="text-center flex-1">
                 <span className="text-[8px] text-slate-450 dark:text-slate-550 uppercase block font-mono font-bold">CÂU LẠC BỘ</span>
-                <span className="text-xs font-black text-slate-700 dark:text-slate-300 truncate block mt-0.5 px-1">
-                  {athlete.clubName || athlete.team || "Tự Do"}
+                <span className={`${clubFontSizeClass} font-black text-slate-700 dark:text-slate-300 block mt-0.5 px-1 line-clamp-2 break-words`}>
+                  {clubNameStr}
                 </span>
               </div>
             </div>
@@ -564,7 +628,7 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
             <div className="text-center">
               <span className="text-[8px] text-red-500 dark:text-red-400 uppercase block font-mono font-bold">BỆ BẮN (LANE)</span>
               <span className="text-xs font-extrabold tracking-tight text-red-700 dark:text-red-400 uppercase">
-                {lane !== null ? `BỆ SỐ ${lane}` : "CHỜ XẾP BỆ"}
+                {lane !== null ? `LANE ${lane}` : "CHỜ XẾP LANE"}
               </span>
             </div>
           </div>
@@ -654,14 +718,20 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
                           {reg.bibNumber}
                         </span>
                       ) : isStep2BibDrawActive ? (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenDrawModal(reg)}
-                          className="px-2.5 py-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg text-[10px] font-extrabold uppercase shadow-xs transition-all flex items-center gap-1 cursor-pointer"
-                        >
-                          <Dices className="w-3 h-3" />
-                          <span>Bốc thăm BIB</span>
-                        </button>
+                        isSelf(reg) ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDrawModal(reg)}
+                            className="px-2.5 py-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg text-[10px] font-extrabold uppercase shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                          >
+                            <Dices className="w-3 h-3" />
+                            <span>Bốc thăm BIB</span>
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic">
+                            Chờ VĐV tự bốc
+                          </span>
+                        )
                       ) : isStep3OrLater ? (
                         <span className="text-[10px] font-mono font-bold text-slate-400">
                           Chưa có BIB
@@ -705,8 +775,14 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
       return;
     }
 
-    const targetAth = selectedAthleteForDraw || userAthleteProfile || (myRegisteredAthletes && myRegisteredAthletes.length > 0 ? myRegisteredAthletes[0] : null);
+    const targetAth = selectedAthleteForDraw || userAthleteProfile;
     if (!currentUser || !targetAth || !activeHistoryId) return;
+    
+    if (!isSelf(targetAth)) {
+      alert("⚠️ Bạn chỉ được phép tự bốc thăm số BIB cho chính mình, không được bốc hộ vận động viên khác!");
+      setIsDrawModalOpen(false);
+      return;
+    }
     
     setIsDrawing(true);
     try {
@@ -934,7 +1010,8 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
           status: existing.status || "registered",
           isMasterAthlete: regMode === "system",
           masterAthleteId: regMode === "system" && currentActiveSysAthlete ? currentActiveSysAthlete.id : existing.masterAthleteId,
-          avatarUrl: (regMode === "system" && currentActiveSysAthlete ? currentActiveSysAthlete.avatarUrl : existing.avatarUrl) || ""
+          avatarUrl: (regMode === "system" && currentActiveSysAthlete ? currentActiveSysAthlete.avatarUrl : existing.avatarUrl) || "",
+          isRegisteringForSomeoneElse: isRegisteringForSomeoneElse
         } as any;
         nextAthletes[existingAthleteIdx] = updatedAthlete;
       } else {
@@ -965,7 +1042,8 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
           scores: {},
           isMasterAthlete: regMode === "system",
           masterAthleteId: regMode === "system" && currentActiveSysAthlete ? currentActiveSysAthlete.id : undefined,
-          avatarUrl: regMode === "system" && currentActiveSysAthlete ? currentActiveSysAthlete.avatarUrl || "" : ""
+          avatarUrl: regMode === "system" && currentActiveSysAthlete ? currentActiveSysAthlete.avatarUrl || "" : "",
+          isRegisteringForSomeoneElse: isRegisteringForSomeoneElse
         } as any;
         nextAthletes.push(newAthlete);
       }
@@ -1065,7 +1143,18 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
     
     // Dynamic QR generation link using standard VietQR Open API
     const athleteVscId = (activeTicketAthlete.vscNumber || activeTicketAthlete.id || "VSC-TEMP").trim().toUpperCase();
-    const paymentInfo = `${athleteVscId} REG ${activeHistoryId || "TEMP_TOUR"}`.trim().toUpperCase();
+    const removeVietnameseAccentsAndSpaces = (str: string) => {
+      if (!str) return "";
+      return str
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d")
+        .replace(/Đ/g, "D")
+        .replace(/[^a-zA-Z0-9]/g, "")
+        .toUpperCase();
+    };
+    const cleanTourName = removeVietnameseAccentsAndSpaces(tName).substring(0, 25);
+    const paymentInfo = `${athleteVscId} DK ${cleanTourName}`.trim().toUpperCase();
     let cleanBankId = bankName.toLowerCase().replace(/\s+/g, "");
     if (cleanBankId === "mbbank") {
       cleanBankId = "mb";
@@ -1084,7 +1173,19 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
           </div>
           <button
             type="button"
-            onClick={() => setActiveTicketId(null)}
+            onClick={() => {
+              setActiveTicketId(null);
+              setSelectedMaster(null);
+              setFullName("");
+              setGender("Nam");
+              setDob("");
+              setProvince("Hà Nội");
+              setClubName("Tự Do");
+              setCompetitionCategory("Amateur");
+              setVscNumber("");
+              setNotes("");
+              setSearchQuery("");
+            }}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
           >
             <UserPlus className="w-3.5 h-3.5" />
@@ -1156,7 +1257,7 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
                   </span>
                   <span className="text-[10px] text-slate-500">
                     {isPaid 
-                      ? "Bạn đã hoàn tất mọi thủ tục và sẵn sàng bốc thăm phân bệ thi đấu." 
+                      ? "Bạn đã hoàn tất mọi thủ tục và sẵn sàng bốc thăm phân lane thi đấu." 
                       : "Vui lòng hoàn thành chuyển khoản lệ phí theo hướng dẫn bên cạnh để được duyệt tự động."}
                   </span>
                 </div>
@@ -1241,7 +1342,7 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
           )}
 
           {/* Bento-style Athlete Badge for paid tickets */}
-          {isPaid && (
+          {isPaid && isSelf(activeTicketAthlete) && (
             <div className="lg:w-[380px] flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-4">
               <span className="text-xs font-black text-slate-500 uppercase tracking-wider block text-center">
                 THẺ VẬN ĐỘNG VIÊN CHÍNH THỨC
@@ -1260,7 +1361,7 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
           <ul className="text-[11px] text-slate-550 dark:text-slate-400 list-disc list-inside space-y-1.5">
             <li><strong>Chuyển khoản chính xác nội dung:</strong> Hệ thống sử dụng bộ quét đối chiếu giao dịch ngân hàng thời gian thực qua mã lệnh <code className="px-1 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-red-500 font-bold">{paymentInfo}</code>.</li>
             <li><strong>Thời gian duyệt:</strong> Sau khi bạn quét QR và hoàn tất giao dịch trên App ngân hàng, hệ thống sẽ tự động duyệt trong 10-30 giây.</li>
-            <li><strong>Kiểm tra bệ bắn:</strong> Khi trạng thái vé chuyển sang <span className="text-emerald-600 font-bold">ĐÃ PAID</span>, bạn sẽ lập tức xuất hiện trong danh sách điểm danh và được gán bệ lượt bắn bởi Trọng tài.</li>
+            <li><strong>Kiểm tra lane bắn:</strong> Khi trạng thái vé chuyển sang <span className="text-emerald-600 font-bold">ĐÃ PAID</span>, bạn sẽ lập tức xuất hiện trong danh sách điểm danh và được gán lane lượt bắn bởi Trọng tài.</li>
           </ul>
         </div>
 
@@ -1338,21 +1439,23 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
 
   // PORTAL IS CLOSED / STEP 2+ MESSAGE FOR REGISTERED ATHLETES
   if (isStep2OrLater) {
-    // If the user is logged in and is a registered athlete in this tournament, let them bốc thăm BIB and view their card!
-    if (currentUser && userAthleteProfile) {
+    // If the user is logged in and is a registered athlete in this tournament (or registered others), let them view stats and lists!
+    if (currentUser && (userAthleteProfile || myRegisteredAthletes.length > 0)) {
       // Find Heat & Lane assignment
-      const ccs = currentTournamentDoc?.commandCenterState;
       let assignedHeatNum: number | null = null;
       let assignedLaneNum: number | null = null;
 
-      if (ccs && ccs.heats) {
+      if (userAthleteProfile) {
+        const ccs = currentTournamentDoc?.commandCenterState;
         const athId = userAthleteProfile.id || userAthleteProfile.participantId;
-        for (const heat of ccs.heats) {
-          const foundLane = (heat.lanes || []).find((l: any) => l.participantId === athId || l.athleteId === athId);
-          if (foundLane) {
-            assignedHeatNum = heat.heatNumber;
-            assignedLaneNum = foundLane.laneNumber;
-            break;
+        if (ccs && ccs.heats) {
+          for (const heat of ccs.heats) {
+            const foundLane = (heat.lanes || []).find((l: any) => l.participantId === athId || l.athleteId === athId);
+            if (foundLane) {
+              assignedHeatNum = heat.heatNumber;
+              assignedLaneNum = foundLane.laneNumber;
+              break;
+            }
           }
         }
       }
@@ -1369,61 +1472,93 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
                 <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 dark:bg-amber-950/45 border border-amber-100 dark:border-amber-900/40 text-amber-800 dark:text-amber-400 text-[9px] font-black rounded-md uppercase tracking-wider mb-1.5">
                   Cổng Đăng Ký Đã Đóng
                 </div>
-                <h3 className="text-base font-black text-slate-950 dark:text-white uppercase leading-none mt-1">XÁC NHẬN THAM GIA THÀNH CÔNG</h3>
+                <h3 className="text-base font-black text-slate-950 dark:text-white uppercase leading-none mt-1">
+                  {userAthleteProfile ? "XÁC NHẬN THAM GIA THÀNH CÔNG" : "ĐĂNG KÝ THÀNH CÔNG CHO ĐỒNG ĐỘI"}
+                </h3>
                 <p className="text-xs text-slate-500 mt-1.5">
-                  Cổng ghi danh đã chính thức khép lại. Hồ sơ thi đấu của bạn đã được lưu giữ chính thức trên Hệ Thống VSC.
+                  {userAthleteProfile 
+                    ? "Cổng ghi danh đã chính thức khép lại. Hồ sơ thi đấu của bạn đã được lưu giữ chính thức trên Hệ Thống VSC."
+                    : "Cổng ghi danh đã chính thức khép lại. Bạn đã đăng ký thành công cho các VĐV dưới đây."}
                 </p>
               </div>
             </div>
 
             {/* Athlete quick info */}
-            <div className="p-4 bg-slate-50 dark:bg-slate-850 border border-slate-150 dark:border-slate-800 rounded-2xl grid grid-cols-2 gap-4 text-xs">
-              <div>
-                <span className="text-[10px] text-slate-400 block font-mono">Họ Tên VĐV</span>
-                <span className="font-extrabold text-slate-800 dark:text-white uppercase">{userAthleteProfile.fullName || userAthleteProfile.name}</span>
+            {userAthleteProfile && (
+              <div className="p-4 bg-slate-50 dark:bg-slate-850 border border-slate-150 dark:border-slate-800 rounded-2xl grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-mono">Họ Tên VĐV</span>
+                  <span className="font-extrabold text-slate-800 dark:text-white uppercase">{userAthleteProfile.fullName || userAthleteProfile.name}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-mono">Hạng Mục</span>
+                  <span className="font-extrabold text-indigo-600 dark:text-indigo-400 font-mono">{userAthleteProfile.competitionCategory || "Amateur"}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-mono">Số thẻ VSC</span>
+                  <span className="font-extrabold text-slate-850 dark:text-slate-200">{userAthleteProfile.vscNumber || "Không có"}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-mono">Câu lạc bộ</span>
+                  <span className="font-extrabold text-slate-850 dark:text-slate-200">{userAthleteProfile.clubName || userAthleteProfile.team || "Tự Do"}</span>
+                </div>
               </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block font-mono">Hạng Mục</span>
-                <span className="font-extrabold text-indigo-600 dark:text-indigo-400 font-mono">{userAthleteProfile.competitionCategory || "Amateur"}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block font-mono">Số thẻ VSC</span>
-                <span className="font-extrabold text-slate-850 dark:text-slate-200">{userAthleteProfile.vscNumber || "Không có"}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block font-mono">Câu lạc bộ</span>
-                <span className="font-extrabold text-slate-850 dark:text-slate-200">{userAthleteProfile.clubName || userAthleteProfile.team || "Tự Do"}</span>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* BIB DRAW AREA OR THE TOURNAMENT MATCH CARD */}
-          {isStep2BibDrawActive ? (
-            !userAthleteProfile.bibNumber ? (
-              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-slate-900/60 dark:to-slate-900/40 border border-indigo-100 dark:border-slate-800 rounded-3xl p-6 shadow-md text-center space-y-6">
-                <div className="max-w-md mx-auto space-y-2">
-                  <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl flex items-center justify-center mx-auto text-indigo-600 dark:text-indigo-400 mb-2">
-                    <Sparkles className="w-6 h-6 animate-pulse" />
+          {userAthleteProfile && (
+            isStep2BibDrawActive ? (
+              !userAthleteProfile.bibNumber ? (
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-slate-900/60 dark:to-slate-900/40 border border-indigo-100 dark:border-slate-800 rounded-3xl p-6 shadow-md text-center space-y-6">
+                  <div className="max-w-md mx-auto space-y-2">
+                    <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl flex items-center justify-center mx-auto text-indigo-600 dark:text-indigo-400 mb-2">
+                      <Sparkles className="w-6 h-6 animate-pulse" />
+                    </div>
+                    <h4 className="text-base font-black text-indigo-900 dark:text-indigo-300 uppercase">GIAI ĐOẠN 2: TỰ BỐC THĂM SỐ BIB THI ĐẤU</h4>
+                    <p className="text-xs text-indigo-600/70 dark:text-slate-400 leading-relaxed">
+                      Ban tổ chức đã mở Giai đoạn 2 (Điểm danh & Bốc thăm). Hãy nhấn nút bên dưới để bốc thăm ngẫu nhiên số hiệu báo danh (BIB) của bạn. Bạn chỉ được phép bốc thăm <strong>duy nhất 1 lần</strong>.
+                    </p>
                   </div>
-                  <h4 className="text-base font-black text-indigo-900 dark:text-indigo-300 uppercase">GIAI ĐOẠN 2: TỰ BỐC THĂM SỐ BIB THI ĐẤU</h4>
-                  <p className="text-xs text-indigo-600/70 dark:text-slate-400 leading-relaxed">
-                    Ban tổ chức đã mở Giai đoạn 2 (Điểm danh & Bốc thăm). Hãy nhấn nút bên dưới để bốc thăm ngẫu nhiên số hiệu báo danh (BIB) của bạn. Bạn chỉ được phép bốc thăm <strong>duy nhất 1 lần</strong>.
-                  </p>
-                </div>
 
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsDrawModalOpen(true)}
-                    className="px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-extrabold text-xs tracking-wider uppercase rounded-2xl shadow-lg shadow-indigo-100 dark:shadow-none transition-all hover:scale-[1.02] active:scale-95 cursor-pointer inline-flex items-center gap-2.5"
-                  >
-                    <Dices className="w-5 h-5 text-white" />
-                    <span>BẮT ĐẦU BỐC THĂM SỐ BIB</span>
-                  </button>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenDrawModal()}
+                      className="px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-extrabold text-xs tracking-wider uppercase rounded-2xl shadow-lg shadow-indigo-100 dark:shadow-none transition-all hover:scale-[1.02] active:scale-95 cursor-pointer inline-flex items-center gap-2.5"
+                    >
+                      <Dices className="w-5 h-5 text-white" />
+                      <span>BẮT ĐẦU BỐC THĂM SỐ BIB</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="text-center">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">THẺ VẬN ĐỘNG VIÊN CHÍNH THỨC</span>
+                    <p className="text-[10px] text-slate-500 italic mt-0.5">Mỗi vận động viên có một thẻ thi đấu được in ra bởi Ban tổ chức.</p>
+                  </div>
+
+                  {renderAthleteBentoBadge(userAthleteProfile, "vsc-athlete-badge-closed")}
+                </div>
+              )
             ) : (
+              // Step 3 or later: Thi đấu / Kết thúc -> ĐÓNG tính năng bốc thăm BIB
               <div className="space-y-6">
+                {!userAthleteProfile.bibNumber && (
+                  <div className="bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-3xl p-6 shadow-xs text-center space-y-3">
+                    <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto mb-1">
+                      <AlertCircle className="w-6 h-6" />
+                    </div>
+                    <div className="max-w-md mx-auto space-y-1.5">
+                      <h4 className="text-sm font-black text-amber-800 dark:text-amber-400 uppercase">ĐÃ ĐÓNG TỰ BỐC THĂM SỐ BIB (GIAI ĐOẠN THI ĐẤU)</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                        Giải đấu đã chuyển sang Giai đoạn 3 (Thi Đấu). Chức năng tự bốc thăm số hiệu BIB trực tuyến đã khép lại. Nếu bạn chưa có số BIB, vui lòng liên hệ trực tiếp <strong>Tổ Trọng Tài / Ban Tổ Chức</strong> tại bàn kỹ thuật.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="text-center">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">THẺ VẬN ĐỘNG VIÊN CHÍNH THỨC</span>
                   <p className="text-[10px] text-slate-500 italic mt-0.5">Mỗi vận động viên có một thẻ thi đấu được in ra bởi Ban tổ chức.</p>
@@ -1432,30 +1567,6 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
                 {renderAthleteBentoBadge(userAthleteProfile, "vsc-athlete-badge-closed")}
               </div>
             )
-          ) : (
-            // Step 3 or later: Thi đấu / Kết thúc -> ĐÓNG tính năng bốc thăm BIB
-            <div className="space-y-6">
-              {!userAthleteProfile.bibNumber && (
-                <div className="bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-3xl p-6 shadow-xs text-center space-y-3">
-                  <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto mb-1">
-                    <AlertCircle className="w-6 h-6" />
-                  </div>
-                  <div className="max-w-md mx-auto space-y-1.5">
-                    <h4 className="text-sm font-black text-amber-800 dark:text-amber-400 uppercase">ĐÃ ĐÓNG TỰ BỐC THĂM SỐ BIB (GIAI ĐOẠN THI ĐẤU)</h4>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                      Giải đấu đã chuyển sang Giai đoạn 3 (Thi Đấu). Chức năng tự bốc thăm số hiệu BIB trực tuyến đã khép lại. Nếu bạn chưa có số BIB, vui lòng liên hệ trực tiếp <strong>Tổ Trọng Tài / Ban Tổ Chức</strong> tại bàn kỹ thuật.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <div className="text-center">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">THẺ VẬN ĐỘNG VIÊN CHÍNH THỨC</span>
-                <p className="text-[10px] text-slate-500 italic mt-0.5">Mỗi vận động viên có một thẻ thi đấu được in ra bởi Ban tổ chức.</p>
-              </div>
-
-              {renderAthleteBentoBadge(userAthleteProfile, "vsc-athlete-badge-closed")}
-            </div>
           )}
 
           {/* CONFIRMATION MODAL */}
@@ -1573,6 +1684,50 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
 
         <div className="p-6">
           <form onSubmit={handleRegister} className="space-y-6">
+
+            {/* TOGGLE SELECTOR: REGISTER FOR SELF VS REGISTER ON BEHALF OF */}
+            {regMode === "system" && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-1.5 bg-slate-50 dark:bg-slate-850/50 rounded-2xl border border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRegisteringForSomeoneElse(false);
+                    setSelectedMaster(null);
+                    setFullName("");
+                    setVscNumber("");
+                    setNotes("");
+                    setSearchQuery("");
+                  }}
+                  className={`py-3 px-4 text-xs font-black rounded-xl uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 border ${
+                    !isRegisteringForSomeoneElse
+                      ? "bg-white dark:bg-slate-900 text-indigo-600 shadow-xs border-slate-200/60 dark:border-slate-800"
+                      : "bg-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 border-transparent"
+                  }`}
+                >
+                  <User className="w-4 h-4 shrink-0" />
+                  <span>Đăng ký cho bản thân</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRegisteringForSomeoneElse(true);
+                    setSelectedMaster(null);
+                    setFullName("");
+                    setVscNumber("");
+                    setNotes("");
+                    setSearchQuery("");
+                  }}
+                  className={`py-3 px-4 text-xs font-black rounded-xl uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 border ${
+                    isRegisteringForSomeoneElse
+                      ? "bg-white dark:bg-slate-900 text-indigo-600 shadow-xs border-slate-200/60 dark:border-slate-800"
+                      : "bg-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 border-transparent"
+                  }`}
+                >
+                  <Users className="w-4 h-4 shrink-0" />
+                  <span>Đăng ký hộ / Ghi danh hộ</span>
+                </button>
+              </div>
+            )}
 
             {/* SECTOR 1: MAIN REGISTER / VIEW PROFILE AREA */}
             {!isRegisteringForSomeoneElse && (
@@ -1911,7 +2066,7 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
                         type="text"
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
-                        placeholder="Yêu cầu bệ bắn, thời gian di chuyển, v.v..."
+                        placeholder="Yêu cầu lane bắn, thời gian di chuyển, v.v..."
                         className="w-full px-3 py-2 h-10 text-xs bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white"
                       />
                     </div>
@@ -2063,7 +2218,7 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
                           type="text"
                           value={notes}
                           onChange={(e) => setNotes(e.target.value)}
-                          placeholder="Yêu cầu bệ bắn, thời gian di chuyển, v.v..."
+                          placeholder="Yêu cầu lane bắn, thời gian di chuyển, v.v..."
                           className="w-full px-3 py-2 h-10 text-xs bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white"
                         />
                       </div>
@@ -2175,7 +2330,7 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
                       type="text"
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Yêu cầu bệ bắn, thời gian di chuyển, v.v..."
+                      placeholder="Yêu cầu lane bắn, thời gian di chuyển, v.v..."
                       className="w-full px-3 py-2 h-10 text-xs bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white"
                     />
                   </div>
@@ -2204,26 +2359,7 @@ export const PublicRegistration: React.FC<PublicRegistrationProps> = ({
               </div>
             )}
 
-            {/* SECTOR 3: CHECKBOX "Tôi muốn đăng ký thi đấu hộ cho VĐV hệ thống khác" (PLACED AFTER THE PRIMARY SECTION) */}
-            {regMode === "system" && (
-              <div className="flex items-center gap-2 p-3 bg-slate-50 dark:bg-slate-850 rounded-xl border border-slate-100 dark:border-slate-800 mt-4">
-                <input
-                  id="onBehalfCheckbox"
-                  type="checkbox"
-                  checked={isRegisteringForSomeoneElse}
-                  onChange={(e) => {
-                    setIsRegisteringForSomeoneElse(e.target.checked);
-                    setSelectedMaster(null);
-                    setFullName("");
-                    setVscNumber("");
-                  }}
-                  className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
-                />
-                <label htmlFor="onBehalfCheckbox" className="text-xs font-black text-slate-705 dark:text-slate-300 cursor-pointer select-none">
-                  Tôi muốn đăng ký thi đấu hộ cho VĐV hệ thống khác (Không liên kết tài khoản)
-                </label>
-              </div>
-            )}
+
           </form>
         </div>
       </div>

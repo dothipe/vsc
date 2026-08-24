@@ -15,44 +15,75 @@ import { handleFirestoreError } from "../foundation/failure";
 
 function isPlainObject(val: any): boolean {
   if (val === null || typeof val !== 'object') return false;
+  if (Array.isArray(val)) return false;
+  if (val instanceof Date || val instanceof RegExp) return false;
+  
+  // Exclude Firestore FieldValue/Timestamp or other Firestore internal classes if possible
+  const className = val.constructor ? val.constructor.name : "";
+  if (className && (className.includes("FieldValue") || className.includes("Timestamp") || className.includes("DocumentReference"))) {
+    return false;
+  }
+  
   const proto = Object.getPrototypeOf(val);
-  return proto === null || proto === Object.prototype;
+  if (proto === null || proto === Object.prototype) return true;
+  
+  // If proto is some other object, check if it's a simple object with constructor Name of Object
+  return className === "Object";
 }
 
-function sanitizeForFirestore<T>(obj: T): T {
+function sanitizeForFirestore<T>(obj: T, isInsideTournamentAthleteList: boolean = false): T {
   if (obj === undefined) return null as any;
   if (obj === null) return null as any;
   if (typeof obj === "string" && obj.startsWith("data:image")) {
-    if (obj.length < 350000) {
+    if (isInsideTournamentAthleteList) {
+      return "" as any;
+    }
+    if (obj.length < 100000) {
       return obj;
     }
     return "" as any;
   }
   if (Array.isArray(obj)) {
-    return obj.map(item => sanitizeForFirestore(item)) as any;
+    return obj.map(item => sanitizeForFirestore(item, isInsideTournamentAthleteList)) as any;
   }
   if (isPlainObject(obj)) {
     const cleaned: any = {};
+
     for (const key of Object.keys(obj)) {
       let val = (obj as any)[key];
       if (val !== undefined) {
+        const nextIsInsideList = isInsideTournamentAthleteList || key === "athletes" || key === "teamAthletes";
+
+        if (nextIsInsideList && (key === "avatarUrl" || key === "avatar")) {
+          if (typeof val === "string" && (val.startsWith("data:image") || val.length > 500)) {
+            val = "";
+          }
+        }
+
         if (typeof val === "string" && val.startsWith("data:image")) {
-          if (key === "avatarUrl") {
-            if (val.length < 350000) {
-              // Store directly online in Firestore
+          if (key === "avatarUrl" || key === "avatar") {
+            if (val.length < 50000) {
+              // Keep compressed avatar online in Firestore
             } else {
               val = "";
             }
-          } else if (key === "logo" || key === "banner") {
-            // Keep compressed base64 image data for tournament logo & banner
-            if (val.length >= 350000) {
+          } else if (["logo", "banner", "logoUrl", "bannerUrl"].includes(key)) {
+            if (val.length < 95000) {
+              // Keep compressed logo / banner online in Firestore
+            } else {
               val = "";
             }
           } else {
-            val = "";
+            if (val.length >= 80000) {
+              val = "";
+            }
           }
+        } else if (key === "auditLogs" && Array.isArray(val)) {
+          val = val.slice(0, 50).map(item => sanitizeForFirestore(item, nextIsInsideList));
+        } else if (key === "scoreVersions" && Array.isArray(val)) {
+          val = val.slice(-15).map(item => sanitizeForFirestore(item, nextIsInsideList));
         } else {
-          val = sanitizeForFirestore(val);
+          val = sanitizeForFirestore(val, nextIsInsideList);
         }
         cleaned[key] = val;
       }

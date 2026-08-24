@@ -1,62 +1,11 @@
+import { compressAvatar } from "./imageCompressor";
+
 /**
  * Utility to process uploaded avatar images.
  * Automatically crops to a square, resizes, compresses, and converts to WebP.
  */
-export const processAvatarImage = (file: File, targetSize = 120, quality = 0.5): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            reject(new Error("Could not get canvas context"));
-            return;
-          }
-
-          // Calculate square crop dimensions (center crop)
-          const minDim = Math.min(img.width, img.height);
-          const sx = (img.width - minDim) / 2;
-          const sy = (img.height - minDim) / 2;
-
-          // Set canvas size to square
-          canvas.width = targetSize;
-          canvas.height = targetSize;
-
-          // Draw the cropped and resized image onto the canvas
-          ctx.drawImage(
-            img,
-            sx,
-            sy,
-            minDim,
-            minDim, // Source crop
-            0,
-            0,
-            targetSize,
-            targetSize // Destination
-          );
-
-          // Convert to WebP format with specified compression quality
-          let dataUrl = canvas.toDataURL("image/webp", quality);
-          
-          // Fallback if browser doesn't support webp conversion
-          if (!dataUrl.startsWith("data:image/webp")) {
-            dataUrl = canvas.toDataURL("image/jpeg", quality);
-          }
-
-          resolve(dataUrl);
-        } catch (err) {
-          reject(err);
-        }
-      };
-      img.onerror = () => reject(new Error("Failed to load image into element"));
-      img.src = event.target?.result as string;
-    };
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsDataURL(file);
-  });
+export const processAvatarImage = async (file: File | string, targetSize = 110, quality = 0.55): Promise<string> => {
+  return compressAvatar(file);
 };
 
 /**

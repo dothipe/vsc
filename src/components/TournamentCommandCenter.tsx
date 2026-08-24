@@ -199,7 +199,15 @@ export const TournamentCommandCenter: React.FC<TournamentCommandCenterProps> = (
     }
   }, [activeHistoryId, setTeamAthletes]);
 
-  const activeSetterAndCloud = useCallback(async (updatedList: Athlete[]) => {
+  const activeSetterAndCloud = useCallback(async (updatedList: Athlete[], isDeletion = false) => {
+    if (isDeletion) {
+      await syncAthletesToCloud(updatedList);
+      if (competitionMode === "team" || (currentTournamentDoc && currentTournamentDoc.tournamentFormat === "mixed")) {
+        await syncTeamAthletesToCloud(updatedList);
+      }
+      return;
+    }
+
     // Merge updatedList back into the global athletes/teamAthletes list to prevent accidental deletions of athletes
     // who are not currently active in activeAthletesList (e.g. those eliminated in prior stages)
     const currentGlobalAthletes = athletes || [];
@@ -3798,6 +3806,7 @@ export const TournamentCommandCenter: React.FC<TournamentCommandCenterProps> = (
             showToast={showToast}
             setEditingAthlete={setEditingAthlete}
             setEditAthleteFields={setEditAthleteFields}
+            currentTournamentDoc={currentTournamentDoc}
           />
         )}
 

@@ -16,9 +16,11 @@ import {
   Upload,
   CheckCircle,
   AlertCircle,
-  Globe
+  Globe,
+  Image as ImageIcon
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { compressLogo } from "../utils/imageCompressor";
 
 interface SponsorManagementProps {
   currentUser?: any;
@@ -361,10 +363,36 @@ export function SponsorManagement({ currentUser, userRole }: SponsorManagementPr
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Logo URL (Opt)</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Logo Nhà Tài Trợ</label>
+                  <label className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1">
+                    <ImageIcon className="w-3 h-3" /> Tải ảnh lên (Nén nhỏ)
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          try {
+                            const compressed = await compressLogo(file);
+                            setFormFields((prev) => ({ ...prev, logoUrl: compressed }));
+                          } catch (err) {
+                            console.error("Lỗi nén logo tài trợ:", err);
+                          }
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                {formFields.logoUrl && (
+                  <div className="w-16 h-16 rounded-lg border border-slate-200 dark:border-slate-800 p-1 flex items-center justify-center bg-slate-50 dark:bg-slate-900 mb-1">
+                    <img src={formFields.logoUrl} alt="Preview" className="max-w-full max-h-full object-contain" />
+                  </div>
+                )}
                 <input
                   type="text"
-                  placeholder="https://example.com/logo.png"
+                  placeholder="https://example.com/logo.png hoặc tải ảnh"
                   value={formFields.logoUrl || ""}
                   onChange={(e) => setFormFields({ ...formFields, logoUrl: e.target.value })}
                   className="p-2 border.5 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-lg text-xs text-slate-800 dark:text-slate-100 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"

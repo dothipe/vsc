@@ -81,25 +81,10 @@ export function HallOfFameTab() {
       const map: Record<string, any> = {};
       snapshot.forEach((doc) => {
         const data = doc.data();
-        let avatarUrl = data.avatarUrl;
-        if (avatarUrl && typeof avatarUrl === "string" && avatarUrl.startsWith("local-avatar:")) {
-          const id = avatarUrl.split(":")[1] || doc.id;
-          try {
-            const stored = localStorage.getItem(`vsc-avatar-${id}`);
-            if (stored) {
-              avatarUrl = stored;
-            } else {
-              avatarUrl = "";
-            }
-          } catch (e) {
-            console.warn("Failed to get local avatar in HallOfFameTab subscription", e);
-            avatarUrl = "";
-          }
-        }
         const record = { 
           id: doc.id, 
           ...data,
-          avatarUrl 
+          avatarUrl: data.avatarUrl || data.avatar || ""
         };
         map[doc.id] = record;
         if (data.athleteId) {

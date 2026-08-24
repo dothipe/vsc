@@ -116,17 +116,6 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({
       }
     }
     
-    if (avatarUrl && typeof avatarUrl === "string" && avatarUrl.startsWith("local-avatar:")) {
-      const id = avatarUrl.split(":")[1] || vdv.id || vdv.participantId || vdv.masterAthleteId;
-      try {
-        const stored = localStorage.getItem(`vsc-avatar-${id}`);
-        if (stored) return stored;
-      } catch (e) {
-        console.warn("Failed to get local avatar in MainDashboard", e);
-      }
-      return vdv.gender === "Nữ" ? AVATAR_FEMALE : AVATAR_MALE;
-    }
-    
     return avatarUrl || (vdv.gender === "Nữ" ? AVATAR_FEMALE : AVATAR_MALE);
   };
 

@@ -1241,14 +1241,6 @@ export function TournamentStateProvider({ children }: ProviderProps) {
     if (!activeHistoryId || !activeHistoryId.startsWith("tour-")) return;
     if (userRole !== "admin" && userRole !== "referee") return;
 
-    const timeSinceLastIncoming = Date.now() - lastIncomingUpdateRef.current;
-    const isRecentIncoming = isIncomingUpdateRef.current || timeSinceLastIncoming < 2000;
-
-    if (isRecentIncoming) {
-      isIncomingUpdateRef.current = false;
-      return;
-    }
-
     // Do not publish if the tournament document has not finished loading or state is null
     if (!currentTournamentDoc || !commandCenterState) {
       return;
@@ -1290,6 +1282,21 @@ export function TournamentStateProvider({ children }: ProviderProps) {
 
     const mappedStatus = mapWorkflowStageToStatus(commandCenterState?.workflowStage);
     const mappedWorkflowState = mapWorkflowStageToWorkflowState(commandCenterState?.workflowStage);
+
+    // Bypass isRecentIncoming block if we have a critical mismatch where the database status/workflowState
+    // is out of sync with the mapped workflowStage status.
+    const hasStatusMismatch = (
+      (mappedStatus && currentTournamentDoc.status !== mappedStatus) ||
+      (mappedWorkflowState && currentTournamentDoc.workflowState !== mappedWorkflowState)
+    );
+
+    const timeSinceLastIncoming = Date.now() - lastIncomingUpdateRef.current;
+    const isRecentIncoming = isIncomingUpdateRef.current || timeSinceLastIncoming < 2000;
+
+    if (isRecentIncoming && !hasStatusMismatch) {
+      isIncomingUpdateRef.current = false;
+      return;
+    }
 
     const updatePayload: any = {
       matchName,
@@ -1933,23 +1940,16 @@ export function TournamentStateProvider({ children }: ProviderProps) {
   };
 
   const handleDeleteAthlete = (athleteId: string) => {
-    let nextAthletes = athletes;
-    let nextTeamAthletes = teamAthletes;
-    if (competitionMode === "individual") {
-      setAthletes((prev) => {
-        nextAthletes = prev.filter((a) => a.id !== athleteId);
-        return nextAthletes;
-      });
-    } else {
-      setTeamAthletes((prev) => {
-        nextTeamAthletes = prev.filter((a) => a.id !== athleteId);
-        return nextTeamAthletes;
-      });
-    }
+    const nextAthletes = athletes.filter((a) => a.id !== athleteId && a.participantId !== athleteId);
+    const nextTeamAthletes = teamAthletes.filter((a) => a.id !== athleteId && a.participantId !== athleteId);
+
+    setAthletes(nextAthletes);
+    setTeamAthletes(nextTeamAthletes);
+
     if (activeHistoryId && activeHistoryId.startsWith("tour-")) {
       updateOnlineTournament(activeHistoryId, {
-        athletes: competitionMode === "individual" ? nextAthletes.filter((a) => a.id !== athleteId) : athletes,
-        teamAthletes: competitionMode !== "individual" ? nextTeamAthletes.filter((a) => a.id !== athleteId) : teamAthletes
+        athletes: nextAthletes,
+        teamAthletes: nextTeamAthletes
       }).catch((err) => console.error(err));
     }
   };

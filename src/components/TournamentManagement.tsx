@@ -32,6 +32,7 @@ import { RankingTab } from "./tournament-management/RankingTab";
 import { StatisticsTab } from "./tournament-management/StatisticsTab";
 import { AuditHistoryTab } from "./tournament-management/AuditHistoryTab";
 import { AVATAR_MALE, AVATAR_FEMALE } from "./AthleteRegistry";
+import { compressLogo, compressBanner } from "../utils/imageCompressor";
 
 /**
  * Merges and deduplicates athletes with the same VSC Number or Master Athlete ID.
@@ -157,24 +158,17 @@ export const TournamentManagement: React.FC<TournamentManagementProps> = ({
   const [globalMasterClubs, setGlobalMasterClubs] = useState<any[]>([]);
 
   const resolveAthleteAvatar = (vdv: any) => {
+    if (!vdv) return AVATAR_MALE;
     let avatarUrl = vdv.avatarUrl || vdv.avatar || null;
     
-    if (!avatarUrl && vdv.isMasterAthlete && vdv.masterAthleteId) {
-      const found = globalMasterAthletes.find((a) => a.id === vdv.masterAthleteId);
-      if (found) {
-        avatarUrl = found.avatarUrl || found.avatar || null;
+    if (!avatarUrl || avatarUrl.startsWith("data:image") === false) {
+      const targetId = vdv.masterAthleteId || vdv.athleteId || vdv.participantId || vdv.id;
+      if (targetId) {
+        const found = globalMasterAthletes.find((a) => a.id === targetId || a.athleteId === targetId);
+        if (found) {
+          avatarUrl = found.avatarUrl || found.avatar || avatarUrl;
+        }
       }
-    }
-    
-    if (avatarUrl && typeof avatarUrl === "string" && avatarUrl.startsWith("local-avatar:")) {
-      const id = avatarUrl.split(":")[1] || vdv.id || vdv.participantId || vdv.masterAthleteId;
-      try {
-        const stored = localStorage.getItem(`vsc-avatar-${id}`);
-        if (stored) return stored;
-      } catch (e) {
-        console.warn("Failed to get local avatar in TournamentManagement", e);
-      }
-      return vdv.gender === "Nữ" ? AVATAR_FEMALE : AVATAR_MALE;
     }
     
     return avatarUrl || (vdv.gender === "Nữ" ? AVATAR_FEMALE : AVATAR_MALE);
@@ -870,55 +864,23 @@ export const TournamentManagement: React.FC<TournamentManagementProps> = ({
     return;
   };
 
-  // Base64 file loaders with Canvas compression to bypass Firestore 1MB limits
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, target: "logo" | "banner") => {
+  // Image uploader with ultra-compact compression for online cloud storage
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: "logo" | "banner") => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          let width = img.width;
-          let height = img.height;
-
-          // Compression size target: logo max 180px, banner max 640px width to keep it extra light and save bandwidth/storage
-          const maxDim = target === "logo" ? 180 : 640;
-          if (width > maxDim || height > maxDim) {
-            if (width > height) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
-            } else {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-            // Draw white background to prevent black background when converting PNG transparency to JPEG
-            ctx.fillStyle = "#ffffff";
-            ctx.fillRect(0, 0, width, height);
-            ctx.drawImage(img, 0, 0, width, height);
-            
-            // Compress with jpeg format and 0.6 quality factor to dramatically reduce file size while keeping visual clarity
-            const compressedData = canvas.toDataURL("image/jpeg", 0.6);
-            if (target === "logo") setLogo(compressedData);
-            if (target === "banner") setBanner(compressedData);
-            setIsDirty(true);
-          }
-        };
-        img.onerror = (err) => {
-          console.error("Failed to load image file:", err);
-        };
-        img.src = reader.result;
+    try {
+      if (target === "logo") {
+        const compressed = await compressLogo(file);
+        setLogo(compressed);
+      } else {
+        const compressed = await compressBanner(file);
+        setBanner(compressed);
       }
-    };
-    reader.readAsDataURL(file);
+      setIsDirty(true);
+    } catch (err) {
+      console.error("Lỗi nén ảnh giải đấu:", err);
+    }
   };
 
   // Reset fields to default empty

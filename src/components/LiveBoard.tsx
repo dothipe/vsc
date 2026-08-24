@@ -38,6 +38,88 @@ interface LiveBoardProps {
   commandCenterState?: any;
 }
 
+function reorderColumnFirst<T>(arr: T[], numCols: number): (T | undefined)[] {
+  if (!arr || arr.length === 0) return [];
+  const N = arr.length;
+  const R = Math.ceil(N / numCols);
+  const reordered: (T | undefined)[] = [];
+  for (let r = 0; r < R; r++) {
+    for (let c = 0; c < numCols; c++) {
+      const origIdx = c * R + r;
+      reordered.push(origIdx < N ? arr[origIdx] : undefined);
+    }
+  }
+  return reordered;
+}
+
+interface AutoScrollingContainerProps {
+  children: React.ReactNode;
+  active: boolean;
+  durationMs: number;
+  className?: string;
+}
+
+const AutoScrollingContainer: React.FC<AutoScrollingContainerProps> = ({
+  children,
+  active,
+  durationMs,
+  className = ""
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!active) return;
+
+    let animFrameId: number;
+    let startTime = performance.now();
+
+    const scrollLoop = () => {
+      const el = containerRef.current;
+      if (!el) {
+        animFrameId = requestAnimationFrame(scrollLoop);
+        return;
+      }
+
+      const maxScroll = el.scrollHeight - el.clientHeight;
+      if (maxScroll <= 0) {
+        el.scrollTop = 0;
+        animFrameId = requestAnimationFrame(scrollLoop);
+        return;
+      }
+
+      const elapsed = performance.now() - startTime;
+      const startFreeze = 2000; // 2s
+      const endFreeze = durationMs - 2000; // D - 2s
+
+      if (elapsed < startFreeze) {
+        el.scrollTop = 0;
+      } else if (elapsed > endFreeze) {
+        el.scrollTop = maxScroll;
+      } else {
+        const progress = (elapsed - startFreeze) / (endFreeze - startFreeze);
+        el.scrollTop = progress * maxScroll;
+      }
+
+      if (elapsed < durationMs) {
+        animFrameId = requestAnimationFrame(scrollLoop);
+      }
+    };
+
+    animFrameId = requestAnimationFrame(scrollLoop);
+    return () => cancelAnimationFrame(animFrameId);
+  }, [active, durationMs]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`flex-1 overflow-y-auto scrollbar-none scroll-smooth ${className}`}
+      style={{ msOverflowStyle: "none", scrollbarWidth: "none" }}
+    >
+      {children}
+    </div>
+  );
+};
+
 export const LiveBoard: React.FC<LiveBoardProps> = ({
   isOpen,
   onClose,
@@ -215,6 +297,71 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
   const [isCustomTopX, setIsCustomTopX] = useState<boolean>(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [selectedRoundIndex, setSelectedRoundIndex] = useState<number>(0);
+
+  const [presentationMode, setPresentationMode] = useState<"default" | "tv" | "slides" | "zoom">("default");
+  const [zoomScale, setZoomScale] = useState<number>(1.4);
+  const [activeSlide, setActiveSlide] = useState<"live" | "next" | "test" | "leaderboard" | "podium">("live");
+  const [tvLanesSlide, setTvLanesSlide] = useState<"live" | "next" | "test">("live");
+
+  // Timer for TV Mode lanes rotation (Option 1)
+  useEffect(() => {
+    if (presentationMode !== "tv") return;
+
+    let timer: NodeJS.Timeout;
+
+    const runTvLanesShow = () => {
+      if (tvLanesSlide === "live") {
+        timer = setTimeout(() => setTvLanesSlide("next"), 20000);
+      } else if (tvLanesSlide === "next") {
+        timer = setTimeout(() => setTvLanesSlide("test"), 10000);
+      } else if (tvLanesSlide === "test") {
+        timer = setTimeout(() => setTvLanesSlide("live"), 10000);
+      }
+    };
+
+    runTvLanesShow();
+
+    return () => clearTimeout(timer);
+  }, [presentationMode, tvLanesSlide]);
+
+  // Reset TV slide when entering TV mode
+  useEffect(() => {
+    if (presentationMode === "tv") {
+      setTvLanesSlide("live");
+    }
+  }, [presentationMode]);
+
+  // Timer for rotating slides (Option 2)
+  useEffect(() => {
+    if (presentationMode !== "slides") return;
+
+    let timer: NodeJS.Timeout;
+    
+    const runSlideShow = () => {
+      if (activeSlide === "live") {
+        timer = setTimeout(() => setActiveSlide("next"), 20000);
+      } else if (activeSlide === "next") {
+        timer = setTimeout(() => setActiveSlide("test"), 10000);
+      } else if (activeSlide === "test") {
+        timer = setTimeout(() => setActiveSlide("leaderboard"), 10000);
+      } else if (activeSlide === "leaderboard") {
+        timer = setTimeout(() => setActiveSlide("podium"), 10000);
+      } else if (activeSlide === "podium") {
+        timer = setTimeout(() => setActiveSlide("live"), 10000);
+      }
+    };
+
+    runSlideShow();
+
+    return () => clearTimeout(timer);
+  }, [presentationMode, activeSlide]);
+
+  // Reset to first slide when entering slides mode
+  useEffect(() => {
+    if (presentationMode === "slides") {
+      setActiveSlide("live");
+    }
+  }, [presentationMode]);
 
   const [isPortrait, setIsPortrait] = useState<boolean>(false);
   const top10ContainerRef = useRef<HTMLDivElement>(null);
@@ -1218,6 +1365,16 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
     return getFlightSlots(activeFlight + 2);
   }, [activeFlight, resolvedHeats, commandCenterState?.currentHeat, commandCenterState?.laneStatus, activeRoundAthletes, athletes, teamAthletes, laneCapacity]);
 
+  const tvActiveSlots = useMemo(() => {
+    if (tvLanesSlide === "next") return currentGroup2Slots;
+    if (tvLanesSlide === "test") return currentGroup3Slots;
+    return currentGroup1Slots;
+  }, [tvLanesSlide, currentGroup1Slots, currentGroup2Slots, currentGroup3Slots]);
+
+  const tvReorderedSlots = useMemo(() => {
+    return reorderColumnFirst(tvActiveSlots, 2);
+  }, [tvActiveSlots]);
+
   const totalFlightsPossible = useMemo(() => {
     if (resolvedHeats && resolvedHeats.length > 0) {
       return resolvedHeats.length;
@@ -1291,6 +1448,38 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
             </select>
           </div>
 
+          {/* Presentation Mode Selector */}
+          <div className="flex items-center gap-1.5 bg-[#101726] border border-[#232e49] rounded-xl px-2.5 py-1.5 h-[38px]">
+            <span className="text-[10px] text-amber-400 font-extrabold uppercase tracking-widest pl-1 whitespace-nowrap">CHẾ ĐỘ XEM:</span>
+            <select
+              value={presentationMode}
+              onChange={(e) => setPresentationMode(e.target.value as any)}
+              className="bg-transparent text-slate-100 border-none outline-none text-xs font-bold cursor-pointer pr-4 focus:ring-0"
+            >
+              <option value="default" className="bg-[#101726]">Giao diện Gốc</option>
+              <option value="tv" className="bg-[#101726]">PA 1: Chế độ TV</option>
+              <option value="slides" className="bg-[#101726]">PA 2: Xoay Slide</option>
+              <option value="zoom" className="bg-[#101726]">PA 3: Thu Phóng</option>
+            </select>
+          </div>
+
+          {/* Zoom Slider */}
+          {presentationMode === "zoom" && (
+            <div className="flex items-center gap-2 bg-[#101726] border border-[#232e49] rounded-xl px-2.5 py-1.5 h-[38px]">
+              <span className="text-[10px] text-blue-400 font-extrabold uppercase tracking-widest whitespace-nowrap">ZOOM:</span>
+              <input
+                type="range"
+                min="1.0"
+                max="2.0"
+                step="0.1"
+                value={zoomScale}
+                onChange={(e) => setZoomScale(Number(e.target.value))}
+                className="w-16 sm:w-24 accent-blue-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg appearance-none"
+              />
+              <span className="text-xs font-black text-slate-300 w-8">{Math.round(zoomScale * 100)}%</span>
+            </div>
+          )}
+
           {/* Exit screen takeover back to app button */}
           <button
             onClick={onClose}
@@ -1333,8 +1522,649 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
 
 
 
-      {/* Main Container Stage Body */}
-      <div className="flex-none md:flex-1 w-full overflow-visible md:overflow-hidden px-4 pb-4 pt-2 md:p-6 flex flex-col md:flex-row gap-6 h-auto md:h-full">
+      {/* ------------------------------------------------------------------------- */}
+      {/* RENDER MODE TV: PHƯƠNG ÁN 1 */}
+      {/* ------------------------------------------------------------------------- */}
+      {presentationMode === "tv" && (
+        <div className="flex-none md:flex-1 w-full overflow-y-auto px-4 pb-4 md:p-6 flex flex-col md:flex-row gap-8 bg-black h-auto md:h-full text-white animate-fadeIn">
+          {/* Column 1: Top Standings & Podiums (Left 40%) */}
+          <div className="flex flex-col gap-6 md:flex-[4] min-w-0">
+            {/* Header / Sub-title */}
+            <div className="flex items-center gap-3 border-b-2 border-emerald-500/30 pb-3">
+              <Trophy className="w-8 h-8 text-amber-400" />
+              <h2 className="text-2xl font-black text-amber-400 uppercase tracking-widest">BẢNG VÀNG & TOP STANDING</h2>
+            </div>
+            
+            {/* Simple Top X Standings list (Enlarged) */}
+            <div className="bg-[#050912] border-2 border-slate-800 rounded-2xl p-4 flex-1 overflow-y-auto scrollbar-thin">
+              <h3 className="text-xl font-extrabold text-amber-400 uppercase mb-4 tracking-wider">Top Vận Động Viên</h3>
+              <div className="flex flex-col gap-3">
+                {sortedSurvivalAthletes.slice(0, 10).map((ath, idx) => (
+                  <div key={ath.id} className="flex items-center justify-between p-3 bg-slate-900/60 border border-slate-800 rounded-xl">
+                    <div className="flex items-center gap-4">
+                      <span className={`w-8 h-8 flex items-center justify-center rounded-lg text-lg font-black ${
+                        idx === 0 ? "bg-amber-400 text-black" :
+                        idx === 1 ? "bg-slate-300 text-black" :
+                        idx === 2 ? "bg-amber-700 text-white" : "bg-slate-800 text-slate-400"
+                      }`}>{idx + 1}</span>
+                      <span className="text-xl font-black uppercase text-white truncate max-w-[200px]">{ath.name}</span>
+                      <span className="text-sm text-slate-400 font-bold truncate max-w-[120px]">{ath.team || "Tự Do"}</span>
+                    </div>
+                    <span className="text-2xl font-black text-amber-400">{ath.survivalScore}đ</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Column 2: Lanes (Right 60%) */}
+          <div className="flex flex-col gap-6 md:flex-[6] min-w-0">
+            <div className={`flex items-center justify-between border-b-2 pb-3 ${
+              tvLanesSlide === "live" ? "border-emerald-500/30" :
+              tvLanesSlide === "next" ? "border-blue-500/30" : "border-violet-500/30"
+            }`}>
+              <div className="flex items-center gap-3">
+                <Target className={`w-8 h-8 ${
+                  tvLanesSlide === "live" ? "text-emerald-400" :
+                  tvLanesSlide === "next" ? "text-blue-400" : "text-violet-400"
+                }`} />
+                <h2 className={`text-2xl font-black uppercase tracking-widest ${
+                  tvLanesSlide === "live" ? "text-emerald-400" :
+                  tvLanesSlide === "next" ? "text-blue-400" : "text-violet-400"
+                }`}>
+                  {tvLanesSlide === "live" && "CÁC BỆ BẮN HIỆN TẠI (ĐANG BẮN)"}
+                  {tvLanesSlide === "next" && "DANH SÁCH CHỜ THI ĐẤU"}
+                  {tvLanesSlide === "test" && "DANH SÁCH KHỞI ĐỘNG BẮN THỬ"}
+                </h2>
+              </div>
+              <span className={`text-lg px-3 py-1 rounded-lg font-black border ${
+                tvLanesSlide === "live" ? "bg-emerald-950 text-emerald-400 border-emerald-800" :
+                tvLanesSlide === "next" ? "bg-blue-950 text-blue-400 border-blue-800" : "bg-violet-950 text-violet-400 border-violet-800"
+              }`}>
+                {tvLanesSlide === "live" && `Lượt ${activeFlight} / ${totalFlightsPossible}`}
+                {tvLanesSlide === "next" && `Lượt ${activeFlight + 1} / ${totalFlightsPossible}`}
+                {tvLanesSlide === "test" && `Lượt ${activeFlight + 2} / ${totalFlightsPossible}`}
+              </span>
+            </div>
+
+            {/* Giant Grid for TV Lanes */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 overflow-y-auto pr-1">
+              {tvReorderedSlots.map((slot, reorderIdx) => {
+                if (!slot) {
+                  return (
+                    <div key={`tv-placeholder-${reorderIdx}`} className="invisible h-28" />
+                  );
+                }
+
+                const { slotIdx, laneNumber, athlete: ath } = slot;
+
+                if (!ath) {
+                  return (
+                    <div key={`tv-empty-${tvLanesSlide}-${slotIdx}`} className="p-4 border-2 border-dashed border-slate-800 rounded-2xl flex items-center justify-center text-xl text-slate-600 font-bold uppercase bg-slate-900/20 h-28">
+                      BỆ {laneNumber} - TRỐNG
+                    </div>
+                  );
+                }
+
+                const isBỏThi = ath.status === "Bỏ thi";
+                const isCompleted = (() => {
+                  const currentDistance = distances[selectedRoundIndex];
+                  const currentDistanceId = currentDistance?.id;
+                  const maxShots = currentDistance?.shotsCount || shotsCount || 5;
+                  const currentDistanceShots = currentDistanceId ? (ath.scores?.[currentDistanceId] || []) : [];
+                  const filledCount = isDirectMode
+                    ? (currentDistanceShots[0] !== undefined && currentDistanceShots[0] !== null && (currentDistanceShots[0] as any) !== "" ? 1 : 0)
+                    : currentDistanceShots.slice(0, maxShots).filter((s) => s === true || s === false).length;
+                  return filledCount === maxShots;
+                })();
+
+                const liveScore = (() => {
+                  const currentDistance = distances[selectedRoundIndex];
+                  const currentDistanceId = currentDistance?.id;
+                  const currentDistanceShots = currentDistanceId ? (ath.scores?.[currentDistanceId] || []) : [];
+                  const hasNumeric = currentDistanceShots.some((s: any) => typeof s === "number" && s > 1);
+                  const isDirect = isDirectMode || (directMaxPoints !== undefined && directMaxPoints !== null && directMaxPoints > 0);
+
+                  if (isDirect || hasNumeric) {
+                    const sumVal = currentDistanceShots.reduce((acc: number, val: any): number => {
+                      if (typeof val === 'number') return acc + val;
+                      const num = Number(val);
+                      return acc + (!isNaN(num) ? num : (val === true ? 1 : 0));
+                    }, 0);
+                    return Number(sumVal) * Number(currentDistance?.multiplier || 1);
+                  }
+                  return Number(getHitCount(currentDistanceShots)) * Number(currentDistance?.multiplier || 1);
+                })();
+
+                return (
+                  <div key={ath.id} className={`p-4 rounded-2xl border-2 flex items-center justify-between gap-4 h-28 shadow-lg ${
+                    isBỏThi 
+                      ? "bg-rose-950/10 border-rose-950/30 opacity-40"
+                      : tvLanesSlide === "live"
+                        ? isCompleted
+                          ? "bg-emerald-950/20 border-emerald-600"
+                          : "bg-[#02100a] border-emerald-700 hover:border-emerald-500 shadow-md"
+                        : tvLanesSlide === "next"
+                          ? "bg-[#030d1a] border-blue-800/80 hover:border-blue-500 shadow-md"
+                          : "bg-[#10031a] border-violet-800/80 hover:border-violet-500 shadow-md"
+                  }`}>
+                    <div className="flex items-center gap-4 min-w-0">
+                      {/* Lane Badge */}
+                      <span className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl font-black border-2 ${
+                        isBỏThi 
+                          ? "bg-rose-950 border-rose-800 text-rose-400" 
+                          : tvLanesSlide === "live"
+                            ? "bg-emerald-950 border-emerald-500 text-emerald-400"
+                            : tvLanesSlide === "next"
+                              ? "bg-blue-950 border-blue-500 text-blue-400"
+                              : "bg-violet-950 border-violet-500 text-violet-400"
+                      }`}>
+                        B{laneNumber}
+                      </span>
+                      
+                      <div className="min-w-0">
+                        <h4 className="text-2xl font-extrabold text-white uppercase truncate tracking-wide flex items-center gap-1.5">
+                          {ath.name}
+                          {isBỏThi && <span className="text-xs bg-rose-950 text-rose-400 font-extrabold px-1.5 py-0.5 rounded border border-rose-900">BỎ THI</span>}
+                        </h4>
+                        <span className="text-base text-slate-300 font-bold block mt-1 uppercase">{ath.team || "Tự Do"}</span>
+                      </div>
+                    </div>
+
+                    {!isBỏThi && (
+                      <div className="text-right shrink-0 flex flex-col items-end justify-center">
+                        {tvLanesSlide === "live" ? (
+                          <>
+                            <span className="text-4xl font-black text-emerald-400 tracking-wider">
+                              {liveScore}đ
+                            </span>
+                            <span className={`text-[10px] font-black uppercase mt-1 px-1.5 py-0.5 rounded ${
+                              isCompleted ? "bg-emerald-950 text-emerald-400 border border-emerald-800" : "bg-amber-950/60 text-amber-400 border border-amber-900/40 animate-pulse"
+                            }`}>
+                              {isCompleted ? "Xong" : "Đang bắn"}
+                            </span>
+                          </>
+                        ) : tvLanesSlide === "next" ? (
+                          <>
+                            <span className="text-lg bg-blue-950 text-blue-400 border border-blue-800 px-2 py-1 rounded-lg font-black uppercase tracking-wider">
+                              CHỜ BẮN
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase mt-1">Lượt Kế Tiếp</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-lg bg-violet-950 text-violet-400 border border-violet-800 px-2 py-1 rounded-lg font-black uppercase tracking-wider">
+                              BẮN THỬ
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase mt-1">Khởi Động</span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* TV slide active cycle indicators */}
+            <div className="flex items-center justify-center gap-6 bg-[#050912] border border-slate-900 rounded-xl py-2 px-4 mt-1 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] font-bold ${tvLanesSlide === "live" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-400"}`}>1</span>
+                <span className={`text-xs font-bold uppercase tracking-wider ${tvLanesSlide === "live" ? "text-emerald-400 font-black" : "text-slate-500"}`}>ĐANG BẮN (20s)</span>
+              </div>
+              <div className="text-slate-700">•</div>
+              <div className="flex items-center gap-2">
+                <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] font-bold ${tvLanesSlide === "next" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400"}`}>2</span>
+                <span className={`text-xs font-bold uppercase tracking-wider ${tvLanesSlide === "next" ? "text-blue-400 font-black" : "text-slate-500"}`}>CHỜ BẮN (10s)</span>
+              </div>
+              <div className="text-slate-700">•</div>
+              <div className="flex items-center gap-2">
+                <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] font-bold ${tvLanesSlide === "test" ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-400"}`}>3</span>
+                <span className={`text-xs font-bold uppercase tracking-wider ${tvLanesSlide === "test" ? "text-violet-400 font-black" : "text-slate-500"}`}>BẮN THỬ (10s)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------------- */}
+      {/* RENDER ROTATING SLIDES: PHƯƠNG ÁN 2 */}
+      {/* ------------------------------------------------------------------------- */}
+      {presentationMode === "slides" && (
+        <div className="flex-none md:flex-1 w-full flex flex-col bg-black text-white p-6 overflow-y-auto h-auto md:h-full animate-fadeIn">
+          {/* Header/Info about slide */}
+          <div className="flex items-center justify-between border-b-2 border-slate-800 pb-3 mb-6">
+            <div className="flex items-center gap-3">
+              <span className="w-3 h-3 rounded-full bg-red-500 animate-ping"></span>
+              <h2 className="text-2xl sm:text-3xl font-black tracking-widest text-emerald-400 uppercase">
+                {activeSlide === "live" && "ĐANG THI ĐẤU (LƯỢT HIỆN TẠI)"}
+                {activeSlide === "next" && "CHỜ THI ĐẤU (LƯỢT KẾ TIẾP)"}
+                {activeSlide === "test" && "BẮN THỬ - WARMING (LƯỢT CHUẨN BỊ)"}
+                {activeSlide === "leaderboard" && "BẢNG XẾP HẠNG TOP 10 CÁ NHÂN"}
+                {activeSlide === "podium" && "BỤC VINH QUANG DANH DỰ (PODIUM)"}
+              </h2>
+            </div>
+            {/* Progress indicators */}
+            <div className="flex items-center gap-2">
+              <span className={`h-2 rounded-full transition-all duration-300 ${activeSlide === "live" ? "w-10 bg-emerald-500" : "w-2.5 bg-slate-800"}`} />
+              <span className={`h-2 rounded-full transition-all duration-300 ${activeSlide === "next" ? "w-10 bg-blue-500" : "w-2.5 bg-slate-800"}`} />
+              <span className={`h-2 rounded-full transition-all duration-300 ${activeSlide === "test" ? "w-10 bg-violet-500" : "w-2.5 bg-slate-800"}`} />
+              <span className={`h-2 rounded-full transition-all duration-300 ${activeSlide === "leaderboard" ? "w-10 bg-amber-500" : "w-2.5 bg-slate-800"}`} />
+              <span className={`h-2 rounded-full transition-all duration-300 ${activeSlide === "podium" ? "w-10 bg-rose-500" : "w-2.5 bg-slate-800"}`} />
+            </div>
+          </div>
+
+          {/* Active slide content */}
+          <div className="flex-1 min-h-0 flex flex-col justify-stretch overflow-hidden">
+            
+            {/* Slide 1: Live Lanes */}
+            {activeSlide === "live" && (
+              <AutoScrollingContainer active={true} durationMs={20000}>
+                <div className="flex flex-col gap-4">
+                  {currentGroup1Slots.map(({ slotIdx, laneNumber, athlete: ath }) => {
+                    if (!ath) {
+                      return (
+                        <div key={`slide-live-empty-${slotIdx}`} className="w-full border-4 border-dashed border-slate-900 rounded-3xl flex items-center justify-between p-6 bg-slate-950/20 text-3xl text-slate-700 font-black uppercase h-32 shrink-0">
+                          <span>BỆ BẮN {laneNumber}</span>
+                          <span className="text-xl text-slate-600 font-bold">TRỐNG</span>
+                        </div>
+                      );
+                    }
+
+                    const isBỏThi = ath.status === "Bỏ thi";
+                    const liveScore = (() => {
+                      const currentDistance = distances[selectedRoundIndex];
+                      const currentDistanceId = currentDistance?.id;
+                      const currentDistanceShots = currentDistanceId ? (ath.scores?.[currentDistanceId] || []) : [];
+                      const hasNumeric = currentDistanceShots.some((s: any) => typeof s === "number" && s > 1);
+                      const isDirect = isDirectMode || (directMaxPoints !== undefined && directMaxPoints !== null && directMaxPoints > 0);
+
+                      if (isDirect || hasNumeric) {
+                        const sumVal = currentDistanceShots.reduce((acc: number, val: any): number => {
+                          if (typeof val === 'number') return acc + val;
+                          const num = Number(val);
+                          return acc + (!isNaN(num) ? num : (val === true ? 1 : 0));
+                        }, 0);
+                        return Number(sumVal) * Number(currentDistance?.multiplier || 1);
+                      }
+                      return Number(getHitCount(currentDistanceShots)) * Number(currentDistance?.multiplier || 1);
+                    })();
+
+                    const isCompleted = (() => {
+                      const currentDistance = distances[selectedRoundIndex];
+                      const currentDistanceId = currentDistance?.id;
+                      const maxShots = currentDistance?.shotsCount || shotsCount || 5;
+                      const currentDistanceShots = currentDistanceId ? (ath.scores?.[currentDistanceId] || []) : [];
+                      const filledCount = isDirectMode
+                        ? (currentDistanceShots[0] !== undefined && currentDistanceShots[0] !== null && (currentDistanceShots[0] as any) !== "" ? 1 : 0)
+                        : currentDistanceShots.slice(0, maxShots).filter((s) => s === true || s === false).length;
+                      return filledCount === maxShots;
+                    })();
+
+                    return (
+                      <div key={ath.id} className={`w-full p-6 rounded-3xl border-4 flex items-center justify-between gap-6 shadow-2xl relative overflow-hidden shrink-0 h-32 ${
+                        isBỏThi 
+                          ? "bg-rose-950/10 border-rose-950/40 opacity-40"
+                          : "bg-gradient-to-r from-[#0c1222] to-[#040811] border-emerald-500/40 hover:border-emerald-400"
+                      }`}>
+                        <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/5 rounded-full filter blur-3xl pointer-events-none"></div>
+                        
+                        <div className="flex items-center gap-6 min-w-0 flex-1">
+                          <span className="w-20 h-20 rounded-2xl flex items-center justify-center text-4xl font-black bg-emerald-950 border-2 border-emerald-500 text-emerald-300 shadow-xl shrink-0">
+                            B{laneNumber}
+                          </span>
+                          <div className="min-w-0">
+                            <h4 className="text-4xl sm:text-5xl font-black text-white uppercase tracking-wide truncate">{ath.name}</h4>
+                            <div className="flex items-center gap-4 mt-2">
+                              <span className="text-xl sm:text-2xl text-emerald-400 font-extrabold uppercase tracking-wider">{ath.team || "Tự Do"}</span>
+                              <span className="text-slate-600 text-lg">|</span>
+                              <span className="text-slate-400 text-lg font-bold">BIB: {ath.bibNumber || "---"}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {!isBỏThi && (
+                          <div className="flex items-center gap-6 shrink-0">
+                            <div className="text-right">
+                              <span className="text-xs text-slate-500 font-black uppercase tracking-widest block">TRẠNG THÁI</span>
+                              <span className={`text-xl font-extrabold uppercase mt-1 block ${isCompleted ? "text-emerald-400" : "text-amber-400 animate-pulse"}`}>
+                                {isCompleted ? "HOÀN THÀNH" : "ĐANG BẮN"}
+                              </span>
+                            </div>
+                            <div className="text-right pl-4 border-l border-slate-800">
+                              <span className="text-xs text-slate-500 font-black uppercase tracking-widest block">ĐIỂM SỐ</span>
+                              <span className="text-5xl sm:text-6xl font-black text-emerald-400 tracking-wider font-mono">
+                                {liveScore}đ
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </AutoScrollingContainer>
+            )}
+
+            {/* Slide 2: Upcoming Lanes (Next) */}
+            {activeSlide === "next" && (
+              <AutoScrollingContainer active={true} durationMs={10000}>
+                <div className="flex flex-col gap-4">
+                  {currentGroup2Slots.map(({ slotIdx, laneNumber, athlete: ath }) => {
+                    if (!ath) {
+                      return (
+                        <div key={`slide-next-empty-${slotIdx}`} className="w-full border-4 border-dashed border-slate-900 rounded-3xl flex items-center justify-between p-6 bg-slate-950/20 text-3xl text-slate-700 font-black uppercase h-32 shrink-0">
+                          <span>BỆ BẮN {laneNumber}</span>
+                          <span className="text-xl text-slate-600 font-bold">TRỐNG</span>
+                        </div>
+                      );
+                    }
+
+                    const isBỏThi = ath.status === "Bỏ thi";
+
+                    return (
+                      <div key={ath.id} className={`w-full p-6 rounded-3xl border-4 flex items-center justify-between gap-6 shadow-2xl relative overflow-hidden shrink-0 h-32 ${
+                        isBỏThi 
+                          ? "bg-rose-950/10 border-rose-950/40 opacity-40"
+                          : "bg-gradient-to-r from-[#0c1222] to-[#040811] border-blue-500/40 hover:border-blue-400"
+                      }`}>
+                        <div className="flex items-center gap-6 min-w-0 flex-1">
+                          <span className="w-20 h-20 rounded-2xl flex items-center justify-center text-4xl font-black bg-blue-950 border-2 border-blue-500 text-blue-300 shadow-xl shrink-0">
+                            B{laneNumber}
+                          </span>
+                          <div className="min-w-0">
+                            <h4 className="text-4xl sm:text-5xl font-black text-white uppercase tracking-wide truncate">{ath.name}</h4>
+                            <div className="flex items-center gap-4 mt-2">
+                              <span className="text-xl sm:text-2xl text-blue-400 font-extrabold uppercase tracking-wider">{ath.team || "Tự Do"}</span>
+                              <span className="text-slate-600 text-lg">|</span>
+                              <span className="text-slate-400 text-lg font-bold">BIB: {ath.bibNumber || "---"}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {!isBỏThi && (
+                          <div className="flex items-center gap-6 shrink-0">
+                            <div className="text-right pl-4">
+                              <span className="text-xs text-slate-500 font-black uppercase tracking-widest block">LƯỢT ĐẤU</span>
+                              <span className="text-2xl font-black text-blue-400 uppercase mt-1">
+                                KẾ TIẾP ({activeFlight + 1})
+                              </span>
+                            </div>
+                            <span className="text-lg bg-blue-950/80 text-blue-300 border border-blue-900 px-5 py-2.5 rounded-2xl font-black uppercase tracking-widest">
+                              SẴN SÀNG
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </AutoScrollingContainer>
+            )}
+
+            {/* Slide 3: Warming Lanes (Test) */}
+            {activeSlide === "test" && (
+              <AutoScrollingContainer active={true} durationMs={10000}>
+                <div className="flex flex-col gap-4">
+                  {currentGroup3Slots.map(({ slotIdx, laneNumber, athlete: ath }) => {
+                    if (!ath) {
+                      return (
+                        <div key={`slide-test-empty-${slotIdx}`} className="w-full border-4 border-dashed border-slate-900 rounded-3xl flex items-center justify-between p-6 bg-slate-950/20 text-3xl text-slate-700 font-black uppercase h-32 shrink-0">
+                          <span>BỆ BẮN {laneNumber}</span>
+                          <span className="text-xl text-slate-600 font-bold">TRỐNG</span>
+                        </div>
+                      );
+                    }
+
+                    const isBỏThi = ath.status === "Bỏ thi";
+
+                    return (
+                      <div key={ath.id} className={`w-full p-6 rounded-3xl border-4 flex items-center justify-between gap-6 shadow-2xl relative overflow-hidden shrink-0 h-32 ${
+                        isBỏThi 
+                          ? "bg-rose-950/10 border-rose-950/40 opacity-40"
+                          : "bg-gradient-to-r from-[#0c1222] to-[#040811] border-violet-500/40 hover:border-violet-400"
+                      }`}>
+                        <div className="flex items-center gap-6 min-w-0 flex-1">
+                          <span className="w-20 h-20 rounded-2xl flex items-center justify-center text-4xl font-black bg-violet-950 border-2 border-violet-500 text-violet-300 shadow-xl shrink-0">
+                            B{laneNumber}
+                          </span>
+                          <div className="min-w-0">
+                            <h4 className="text-4xl sm:text-5xl font-black text-white uppercase tracking-wide truncate">{ath.name}</h4>
+                            <div className="flex items-center gap-4 mt-2">
+                              <span className="text-xl sm:text-2xl text-violet-400 font-extrabold uppercase tracking-wider">{ath.team || "Tự Do"}</span>
+                              <span className="text-slate-600 text-lg">|</span>
+                              <span className="text-slate-400 text-lg font-bold">BIB: {ath.bibNumber || "---"}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {!isBỏThi && (
+                          <div className="flex items-center gap-6 shrink-0">
+                            <div className="text-right pl-4">
+                              <span className="text-xs text-slate-500 font-black uppercase tracking-widest block">LƯỢT ĐẤU</span>
+                              <span className="text-2xl font-black text-violet-400 uppercase mt-1">
+                                KHỞI ĐỘNG ({activeFlight + 2})
+                              </span>
+                            </div>
+                            <span className="text-lg bg-violet-950/80 text-violet-300 border border-violet-900 px-5 py-2.5 rounded-2xl font-black uppercase tracking-widest">
+                              WARMING
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </AutoScrollingContainer>
+            )}
+
+            {/* Slide 4: Realtime Top X Standings */}
+            {activeSlide === "leaderboard" && (
+              <div className="flex-1 bg-gradient-to-br from-[#050912] to-[#020409] border-4 border-slate-800 rounded-3xl p-6 flex flex-col justify-stretch overflow-hidden">
+                <div className="flex items-center justify-between mb-4 border-b-2 border-slate-800 pb-2 shrink-0">
+                  <h3 className="text-3xl font-black text-amber-400 uppercase tracking-widest">BẢNG XẾP HẠNG TOP 10 CÁ NHÂN</h3>
+                  <span className="text-xl bg-amber-950/60 text-amber-400 border border-amber-900 px-4 py-1 rounded-xl font-black">
+                    THỜI GIAN THỰC
+                  </span>
+                </div>
+                <AutoScrollingContainer active={true} durationMs={10000}>
+                  <div className="flex flex-col gap-4">
+                    {sortedSurvivalAthletes.slice(0, Math.max(20, topXLimit)).map((ath, idx) => (
+                      <div key={ath.id} className="w-full p-6 bg-slate-900/60 border-4 border-slate-800 rounded-3xl flex items-center justify-between gap-6 hover:border-amber-500/40 transition-all shrink-0 h-32">
+                        <div className="flex items-center gap-6 min-w-0 flex-1">
+                          <span className={`w-16 h-16 flex items-center justify-center rounded-2xl text-3xl font-black shadow-lg border-2 ${
+                            idx === 0 ? "bg-amber-400 text-black border-amber-250" :
+                            idx === 1 ? "bg-slate-300 text-black border-slate-100" :
+                            idx === 2 ? "bg-[#b45309] text-white border-amber-600" : "bg-slate-800 text-slate-400 border-slate-700"
+                          }`}>{idx + 1}</span>
+                          
+                          <div className="min-w-0">
+                            <span className="text-4xl sm:text-5xl font-black uppercase text-white truncate block">{ath.name}</span>
+                            <div className="flex items-center gap-4 mt-2">
+                              <span className="text-xl sm:text-2xl text-slate-400 font-bold uppercase tracking-wider">{ath.team || "Tự Do"}</span>
+                              <span className="text-slate-600 text-lg">|</span>
+                              <span className="text-slate-400 text-lg font-bold">BIB: {ath.bibNumber || "---"}</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="text-right pl-6 border-l border-slate-800 shrink-0">
+                          <span className="text-xs text-slate-500 font-black uppercase tracking-widest block">TỔNG ĐIỂM</span>
+                          <span className="text-5xl font-black text-amber-400 tracking-wider block mt-1">{ath.survivalScore}đ</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </AutoScrollingContainer>
+              </div>
+            )}
+
+            {/* Slide 5: Podium (Bục Vinh Quang) */}
+            {activeSlide === "podium" && (
+              <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
+                {/* Individual Podium */}
+                <div className="bg-gradient-to-br from-[#0c1222] to-[#050912] border-4 border-slate-800 rounded-3xl p-6 flex flex-col justify-between">
+                  <h3 className="text-2xl font-black text-amber-400 uppercase tracking-widest text-center border-b border-slate-800 pb-2">
+                    BỤC VINH QUANG CÁ NHÂN
+                  </h3>
+                  <div className="flex items-end justify-center pt-8 pb-4 min-h-[220px]">
+                    {/* 2nd Place */}
+                    <div className="flex-1 flex flex-col items-center">
+                      {top3SurvivalAthletes[1] ? (
+                        <div className="flex flex-col items-center">
+                          <div className="relative w-16 h-16 rounded-full border-4 border-slate-300 bg-slate-900 flex items-center justify-center overflow-hidden mb-2 shadow-2xl">
+                            {resolveAthleteAvatar(top3SurvivalAthletes[1]) ? (
+                              <img src={resolveAthleteAvatar(top3SurvivalAthletes[1])!} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <User className="w-8 h-8 text-slate-400" />
+                            )}
+                            <span className="absolute bottom-0 right-0 w-6 h-6 bg-slate-300 text-slate-950 font-black rounded-full flex items-center justify-center text-sm border-2 border-slate-900 shadow-md">2</span>
+                          </div>
+                          <span className="text-lg font-black text-slate-100 uppercase text-center max-w-[120px] truncate">{top3SurvivalAthletes[1].name}</span>
+                          <span className="text-xs text-slate-400 truncate text-center max-w-[110px] mt-0.5">{top3SurvivalAthletes[1].team || "Tự Do"}</span>
+                          <span className="text-base font-black text-slate-300 mt-1">{top3SurvivalAthletes[1].survivalScore} điểm</span>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-slate-600 font-bold uppercase">Trống</div>
+                      )}
+                      <div className="w-full h-12 bg-slate-800 border-t-2 border-slate-700 mt-4 rounded-t-xl flex items-center justify-center text-lg font-black text-slate-400">II</div>
+                    </div>
+
+                    {/* 1st Place */}
+                    <div className="flex-1 flex flex-col items-center scale-105 -translate-y-2">
+                      {top3SurvivalAthletes[0] ? (
+                        <div className="flex flex-col items-center">
+                          <div className="relative w-20 h-20 rounded-full border-4 border-amber-400 bg-slate-900 flex items-center justify-center overflow-hidden mb-2 shadow-2xl shadow-amber-400/20">
+                            {resolveAthleteAvatar(top3SurvivalAthletes[0]) ? (
+                              <img src={resolveAthleteAvatar(top3SurvivalAthletes[0])!} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <User className="w-10 h-10 text-slate-400" />
+                            )}
+                            <span className="absolute bottom-0 right-0 w-8 h-8 bg-amber-400 text-slate-950 font-black rounded-full flex items-center justify-center text-base border-2 border-slate-900 shadow-md">1</span>
+                          </div>
+                          <span className="text-xl font-black text-amber-300 uppercase text-center max-w-[140px] truncate tracking-wide">{top3SurvivalAthletes[0].name}</span>
+                          <span className="text-xs text-amber-400/80 truncate text-center max-w-[135px] mt-0.5 font-bold">{top3SurvivalAthletes[0].team || "Tự Do"}</span>
+                          <span className="text-lg font-black text-amber-400 mt-1 px-2.5 py-0.5 bg-amber-950/40 border border-amber-900/40 rounded-lg">{top3SurvivalAthletes[0].survivalScore} điểm</span>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-slate-600 font-bold uppercase">Trống</div>
+                      )}
+                      <div className="w-full h-16 bg-gradient-to-b from-amber-500 to-amber-600 border-t-2 border-amber-400 mt-4 rounded-t-xl flex items-center justify-center text-2xl font-black text-black">I</div>
+                    </div>
+
+                    {/* 3rd Place */}
+                    <div className="flex-1 flex flex-col items-center">
+                      {top3SurvivalAthletes[2] ? (
+                        <div className="flex flex-col items-center">
+                          <div className="relative w-16 h-16 rounded-full border-4 border-amber-700 bg-slate-900 flex items-center justify-center overflow-hidden mb-2 shadow-2xl">
+                            {resolveAthleteAvatar(top3SurvivalAthletes[2]) ? (
+                              <img src={resolveAthleteAvatar(top3SurvivalAthletes[2])!} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <User className="w-8 h-8 text-slate-400" />
+                            )}
+                            <span className="absolute bottom-0 right-0 w-6 h-6 bg-amber-700 text-white font-black rounded-full flex items-center justify-center text-sm border-2 border-slate-900 shadow-md">3</span>
+                          </div>
+                          <span className="text-lg font-black text-slate-100 uppercase text-center max-w-[120px] truncate">{top3SurvivalAthletes[2].name}</span>
+                          <span className="text-xs text-slate-400 truncate text-center max-w-[110px] mt-0.5">{top3SurvivalAthletes[2].team || "Tự Do"}</span>
+                          <span className="text-base font-black text-[#d97706] mt-1">{top3SurvivalAthletes[2].survivalScore} điểm</span>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-slate-600 font-bold uppercase">Trống</div>
+                      )}
+                      <div className="w-full h-10 bg-amber-900/80 border-t-2 border-amber-800 mt-4 rounded-t-xl flex items-center justify-center text-base font-black text-amber-100">III</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Team Podium */}
+                <div className="bg-gradient-to-br from-[#0c1222] to-[#050912] border-4 border-slate-800 rounded-3xl p-6 flex flex-col justify-between">
+                  <h3 className="text-2xl font-black text-teal-400 uppercase tracking-widest text-center border-b border-slate-800 pb-2">
+                    BỤC VINH QUANG ĐỒNG ĐỘI
+                  </h3>
+                  <div className="flex items-end justify-center pt-8 pb-4 min-h-[220px]">
+                    {/* 2nd Place Team */}
+                    <div className="flex-1 flex flex-col items-center">
+                      {top3SurvivalTeams[1] ? (
+                        <div className="flex flex-col items-center">
+                          <div className="relative w-16 h-16 rounded-full border-4 border-slate-400 bg-slate-900 flex items-center justify-center overflow-hidden mb-2 shadow-2xl">
+                            {getClubLogo(top3SurvivalTeams[1].teamName) ? (
+                              <img src={getClubLogo(top3SurvivalTeams[1].teamName)!} alt="" className="w-full h-full object-cover bg-white" referrerPolicy="no-referrer" />
+                            ) : (
+                              <span className="text-xl font-black text-slate-300">II</span>
+                            )}
+                            <span className="absolute bottom-0 right-0 w-6 h-6 bg-slate-400 text-slate-950 font-black rounded-full flex items-center justify-center text-sm border-2 border-slate-900 shadow-md">2</span>
+                          </div>
+                          <span className="text-lg font-black text-slate-100 uppercase text-center max-w-[120px] truncate">{top3SurvivalTeams[1].teamName}</span>
+                          <span className="text-base font-black text-slate-300 mt-1">{top3SurvivalTeams[1].totalSurvivalScore} điểm</span>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-slate-600 font-bold uppercase">Trống</div>
+                      )}
+                      <div className="w-full h-12 bg-slate-800 border-t-2 border-slate-700 mt-4 rounded-t-xl flex items-center justify-center text-lg font-black text-slate-400">II</div>
+                    </div>
+
+                    {/* 1st Place Team */}
+                    <div className="flex-1 flex flex-col items-center scale-105 -translate-y-2">
+                      {top3SurvivalTeams[0] ? (
+                        <div className="flex flex-col items-center">
+                          <div className="relative w-20 h-20 rounded-full border-4 border-teal-400 bg-slate-900 flex items-center justify-center overflow-hidden mb-2 shadow-2xl shadow-teal-400/20">
+                            {getClubLogo(top3SurvivalTeams[0].teamName) ? (
+                              <img src={getClubLogo(top3SurvivalTeams[0].teamName)!} alt="" className="w-full h-full object-cover bg-white" referrerPolicy="no-referrer" />
+                            ) : (
+                              <span className="text-2xl font-black text-teal-400">I</span>
+                            )}
+                            <span className="absolute bottom-0 right-0 w-8 h-8 bg-teal-400 text-slate-950 font-black rounded-full flex items-center justify-center text-base border-2 border-slate-900 shadow-md">1</span>
+                          </div>
+                          <span className="text-xl font-black text-teal-300 uppercase text-center max-w-[140px] truncate tracking-wide">{top3SurvivalTeams[0].teamName}</span>
+                          <span className="text-lg font-black text-teal-400 mt-1 px-2.5 py-0.5 bg-teal-950/40 border border-teal-900/40 rounded-lg">{top3SurvivalTeams[0].totalSurvivalScore} điểm</span>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-slate-600 font-bold uppercase">Trống</div>
+                      )}
+                      <div className="w-full h-16 bg-gradient-to-b from-teal-500 to-teal-600 border-t-2 border-teal-400 mt-4 rounded-t-xl flex items-center justify-center text-2xl font-black text-black">I</div>
+                    </div>
+
+                    {/* 3rd Place Team */}
+                    <div className="flex-1 flex flex-col items-center">
+                      {top3SurvivalTeams[2] ? (
+                        <div className="flex flex-col items-center">
+                          <div className="relative w-16 h-16 rounded-full border-4 border-amber-700 bg-slate-900 flex items-center justify-center overflow-hidden mb-2 shadow-2xl">
+                            {getClubLogo(top3SurvivalTeams[2].teamName) ? (
+                              <img src={getClubLogo(top3SurvivalTeams[2].teamName)!} alt="" className="w-full h-full object-cover bg-white" referrerPolicy="no-referrer" />
+                            ) : (
+                              <span className="text-xl font-black text-amber-700">III</span>
+                            )}
+                            <span className="absolute bottom-0 right-0 w-6 h-6 bg-amber-700 text-white font-black rounded-full flex items-center justify-center text-sm border-2 border-slate-900 shadow-md">3</span>
+                          </div>
+                          <span className="text-lg font-black text-slate-100 uppercase text-center max-w-[120px] truncate">{top3SurvivalTeams[2].teamName}</span>
+                          <span className="text-base font-black text-[#d97706] mt-1">{top3SurvivalTeams[2].totalSurvivalScore} điểm</span>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-slate-600 font-bold uppercase">Trống</div>
+                      )}
+                      <div className="w-full h-10 bg-amber-900/80 border-t-2 border-amber-800 mt-4 rounded-t-xl flex items-center justify-center text-base font-black text-amber-100">III</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------------- */}
+      {/* RENDER ORIGINAL / ZOOM VIEW: PHƯƠNG ÁN CŨ & 3 */}
+      {/* ------------------------------------------------------------------------- */}
+      {(presentationMode === "default" || presentationMode === "zoom") && (
+        <div 
+          className="flex-none md:flex-1 w-full overflow-visible md:overflow-hidden px-4 pb-4 pt-2 md:p-6 flex flex-col md:flex-row gap-6 h-auto md:h-full transition-all duration-300"
+          style={presentationMode === "zoom" ? {
+            transform: `scale(${zoomScale})`,
+            transformOrigin: "top left",
+            width: `${100 / zoomScale}%`,
+            height: `${100 / zoomScale}%`
+          } : undefined}
+        >
 
         {/* ========================================================================= */}
         {/* COLUMN 1: HALL OF FAME PODIUMS AND LEADERBOARDS (Visible on desktop or mobile tab) */}
@@ -2199,7 +3029,7 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
           </div>
         </div>
 
-      </div>
+      </div>)}
 
     </div>
   );

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Athlete, DistanceConfig, COMPETITION_CATEGORIES } from "../types";
 import { calculateRounds, getHitCount } from "../utils/qualification";
 import { isNoTeam, getCleanVscNumber, getCleanBibNumber } from "../utils/athleteUtils";
+import { useTournamentState } from "../providers/TournamentStateProvider";
 import { 
   X, 
   Tv, 
@@ -56,6 +57,56 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
 }) => {
   const isDirectMode = shotsCount === 1;
   const isTeamDirectMode = teamShotsCount === 1;
+
+  const { vscSystemClubs, vscSystemAthletes, masterAthletes } = useTournamentState();
+
+  const getClubLogo = (tName: string) => {
+    if (!vscSystemClubs || !tName) return null;
+    const found = vscSystemClubs.find(
+      (c) =>
+        c.clubName?.trim().toLowerCase() === tName.trim().toLowerCase() ||
+        c.name?.trim().toLowerCase() === tName.trim().toLowerCase()
+    );
+    return found?.logoUrl || null;
+  };
+
+  const resolveAthleteAvatar = (vdv: any) => {
+    if (!vdv) return null;
+    let avatarUrl = vdv.avatarUrl || vdv.avatar || null;
+    
+    // 1. Match by masterAthleteId
+    if (!avatarUrl && vdv.masterAthleteId) {
+      const foundLocal = masterAthletes?.find((a: any) => a.id === vdv.masterAthleteId);
+      if (foundLocal && (foundLocal.avatarUrl || foundLocal.avatar)) {
+        avatarUrl = foundLocal.avatarUrl || foundLocal.avatar;
+      } else {
+        const foundSystem = vscSystemAthletes?.find((a: any) => a.id === vdv.masterAthleteId);
+        if (foundSystem && (foundSystem.avatarUrl || foundSystem.avatar)) {
+          avatarUrl = foundSystem.avatarUrl || foundSystem.avatar;
+        }
+      }
+    }
+    
+    // 2. Match by clean name
+    if (!avatarUrl) {
+      const targetName = vdv.fullName || vdv.name;
+      if (targetName) {
+        const cleanNameStr = (str: string) => str.toLowerCase().replace(/[\s\.\-_]+/g, "").trim();
+        const cleanedTarget = cleanNameStr(targetName);
+        
+        const foundLocal = masterAthletes?.find((a: any) => cleanNameStr(a.fullName || a.name || "") === cleanedTarget);
+        if (foundLocal && (foundLocal.avatarUrl || foundLocal.avatar)) {
+          avatarUrl = foundLocal.avatarUrl || foundLocal.avatar;
+        } else {
+          const foundSystem = vscSystemAthletes?.find((a: any) => cleanNameStr(a.fullName || a.name || "") === cleanedTarget);
+          if (foundSystem && (foundSystem.avatarUrl || foundSystem.avatar)) {
+            avatarUrl = foundSystem.avatarUrl || foundSystem.avatar;
+          }
+        }
+      }
+    }
+    return avatarUrl;
+  };
 
   // Merge live draft scores from referee workspaces into athletes list
   const athletes = useMemo(() => {
@@ -150,7 +201,16 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
   }, [commandCenterState?.currentHeat]);
   const [activeFlight, setActiveFlight] = useState<number>(1);
   const [activeMobileTab, setActiveMobileTab] = useState<"board" | "flight" | "topx">("flight");
-  const [activeFlightSubTab, setActiveFlightSubTab] = useState<"current" | "next" | "test">("current");
+  const [activeFlightSubTab, setActiveFlightSubTab] = useState<"current" | "upcoming">("current");
+  const [secondColumnView, setSecondColumnView] = useState<"next" | "test">("next");
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSecondColumnView((prev) => (prev === "next" ? "test" : "next"));
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
   const [topXLimit, setTopXLimit] = useState<number>(10);
   const [isCustomTopX, setIsCustomTopX] = useState<boolean>(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
@@ -1316,15 +1376,27 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
                   {top3SurvivalAthletes[1] ? (
                     <div className="flex flex-col items-center">
                       <div className="relative w-11 h-11 rounded-full border-2 border-slate-355 bg-slate-900 flex items-center justify-center overflow-hidden mb-2">
-                        {top3SurvivalAthletes[1].avatarUrl ? (
-                          <img src={top3SurvivalAthletes[1].avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        {resolveAthleteAvatar(top3SurvivalAthletes[1]) ? (
+                          <img src={resolveAthleteAvatar(top3SurvivalAthletes[1])!} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <User className="w-5 h-5 text-slate-300" />
                         )}
                         <span className="absolute bottom-0 right-0 w-4 h-4 bg-slate-300 text-slate-950 font-black rounded-full flex items-center justify-center text-[10px] border border-slate-900 shadow-sm">{top3SurvivalAthletes[1].dashboardRank}</span>
                       </div>
                       <span className="text-[11px] font-black text-slate-100 uppercase truncate max-w-[85px] text-center">{top3SurvivalAthletes[1].name}</span>
-                      <span className="text-[9px] text-slate-400 truncate max-w-[80px] text-center mt-0.5">{top3SurvivalAthletes[1].team || "Tự Do"}</span>
+                      <div className="flex items-center gap-1 mt-0.5 max-w-[80px]">
+                        {getClubLogo(top3SurvivalAthletes[1].team) && (
+                          <div className="w-3.5 h-3.5 rounded-full overflow-hidden border border-slate-800 bg-white shrink-0 relative flex items-center justify-center">
+                            <img 
+                              src={getClubLogo(top3SurvivalAthletes[1].team)!} 
+                              alt="" 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        )}
+                        <span className="text-[9px] text-slate-400 truncate text-center">{top3SurvivalAthletes[1].team || "Tự Do"}</span>
+                      </div>
                       <span className="text-[10px] font-black text-slate-300 mt-1">{top3SurvivalAthletes[1].survivalScore} điểm</span>
                       <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">Round {getLastActiveRound(top3SurvivalAthletes[1])}</span>
                     </div>
@@ -1344,15 +1416,27 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
                         <Sparkles className="w-5 h-5 fill-amber-300/30" />
                       </div>
                       <div className="relative w-14 h-14 rounded-full border-4 border-amber-400 bg-slate-900 flex items-center justify-center overflow-hidden mb-2 shadow-lg shadow-amber-500/10">
-                        {top3SurvivalAthletes[0].avatarUrl ? (
-                          <img src={top3SurvivalAthletes[0].avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        {resolveAthleteAvatar(top3SurvivalAthletes[0]) ? (
+                          <img src={resolveAthleteAvatar(top3SurvivalAthletes[0])!} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <User className="w-6 h-6 text-amber-400" />
                         )}
                         <span className="absolute bottom-0 right-0 w-5 h-5 bg-amber-400 text-slate-950 font-black rounded-full flex items-center justify-center text-xs border-2 border-slate-900 shadow-md">{top3SurvivalAthletes[0].dashboardRank}</span>
                       </div>
                       <span className="text-xs font-extrabold text-amber-300 uppercase truncate max-w-[95px] text-center tracking-wide">{top3SurvivalAthletes[0].name}</span>
-                      <span className="text-[10px] text-amber-400/80 truncate max-w-[90px] text-center mt-0.5">{top3SurvivalAthletes[0].team || "Tự Do"}</span>
+                      <div className="flex items-center gap-1 mt-0.5 max-w-[90px]">
+                        {getClubLogo(top3SurvivalAthletes[0].team) && (
+                          <div className="w-3.5 h-3.5 rounded-full overflow-hidden border border-slate-800 bg-white shrink-0 relative flex items-center justify-center">
+                            <img 
+                              src={getClubLogo(top3SurvivalAthletes[0].team)!} 
+                              alt="" 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        )}
+                        <span className="text-[10px] text-amber-400/80 truncate text-center">{top3SurvivalAthletes[0].team || "Tự Do"}</span>
+                      </div>
                       <span className="text-xs font-black text-amber-400 mt-1 pl-1 bg-amber-950/40 border border-amber-900/40 rounded px-1.5 py-0.2">{top3SurvivalAthletes[0].survivalScore} điểm</span>
                       <span className="text-[9px] text-amber-500/80 font-bold uppercase tracking-wider mt-0.5 animate-pulse">Round {getLastActiveRound(top3SurvivalAthletes[0])}</span>
                     </div>
@@ -1369,15 +1453,27 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
                   {top3SurvivalAthletes[2] ? (
                     <div className="flex flex-col items-center">
                       <div className="relative w-11 h-11 rounded-full border-2 border-amber-700 bg-slate-900 flex items-center justify-center overflow-hidden mb-2">
-                        {top3SurvivalAthletes[2].avatarUrl ? (
-                          <img src={top3SurvivalAthletes[2].avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        {resolveAthleteAvatar(top3SurvivalAthletes[2]) ? (
+                          <img src={resolveAthleteAvatar(top3SurvivalAthletes[2])!} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <User className="w-5 h-5 text-amber-700" />
                         )}
                         <span className="absolute bottom-0 right-0 w-4 h-4 bg-amber-700 text-white font-black rounded-full flex items-center justify-center text-[10px] border border-slate-900 shadow-sm">{top3SurvivalAthletes[2].dashboardRank}</span>
                       </div>
                       <span className="text-[11px] font-black text-slate-100 uppercase truncate max-w-[85px] text-center">{top3SurvivalAthletes[2].name}</span>
-                      <span className="text-[9px] text-slate-400 truncate max-w-[80px] text-center mt-0.5">{top3SurvivalAthletes[2].team || "Tự Do"}</span>
+                      <div className="flex items-center gap-1 mt-0.5 max-w-[80px]">
+                        {getClubLogo(top3SurvivalAthletes[2].team) && (
+                          <div className="w-3.5 h-3.5 rounded-full overflow-hidden border border-slate-800 bg-white shrink-0 relative flex items-center justify-center">
+                            <img 
+                              src={getClubLogo(top3SurvivalAthletes[2].team)!} 
+                              alt="" 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        )}
+                        <span className="text-[9px] text-slate-400 truncate text-center">{top3SurvivalAthletes[2].team || "Tự Do"}</span>
+                      </div>
                       <span className="text-[10px] font-black text-[#d97706] mt-1">{top3SurvivalAthletes[2].survivalScore} điểm</span>
                       <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">Round {getLastActiveRound(top3SurvivalAthletes[2])}</span>
                     </div>
@@ -1406,8 +1502,15 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
                 <div className="flex-1 flex flex-col items-center">
                   {top3SurvivalTeams[1] ? (
                     <div className="flex flex-col items-center">
-                      <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-400 flex items-center justify-center mb-2 shadow-sm text-slate-400">
-                        <span className="text-sm font-black">{teamRanks[top3SurvivalTeams[1].teamName] || 2}</span>
+                      <div className="w-10 h-10 rounded-full bg-slate-900 border border-slate-400 flex items-center justify-center mb-2 shadow-sm text-slate-400 overflow-hidden relative">
+                        {getClubLogo(top3SurvivalTeams[1].teamName) ? (
+                          <img src={getClubLogo(top3SurvivalTeams[1].teamName)!} alt="" className="w-full h-full object-cover bg-white" referrerPolicy="no-referrer" />
+                        ) : (
+                          <span className="text-sm font-black">{teamRanks[top3SurvivalTeams[1].teamName] || 2}</span>
+                        )}
+                        {getClubLogo(top3SurvivalTeams[1].teamName) && (
+                          <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-slate-300 text-slate-950 font-black rounded-full flex items-center justify-center text-[8px] border border-slate-900 shadow-sm">{teamRanks[top3SurvivalTeams[1].teamName] || 2}</span>
+                        )}
                       </div>
                       <span className="text-[11px] font-black text-slate-100 uppercase truncate max-w-[95px] text-center">{top3SurvivalTeams[1].teamName}</span>
                       <span className="text-[10px] font-black text-slate-300 mt-1">{top3SurvivalTeams[1].totalScore} điểm</span>
@@ -1427,8 +1530,15 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
                       <div className="absolute -top-7 text-teal-400 animate-bounce">
                         <Sparkles className="w-5 h-5 fill-teal-300/30" />
                       </div>
-                      <div className="w-12 h-12 rounded-full bg-slate-900 border-2 border-teal-400 flex items-center justify-center mb-2 shadow-md shadow-teal-500/10 text-teal-400">
-                        <span className="text-sm font-black">{teamRanks[top3SurvivalTeams[0].teamName] || 1}</span>
+                      <div className="w-12 h-12 rounded-full bg-slate-900 border-2 border-teal-400 flex items-center justify-center mb-2 shadow-md shadow-teal-500/10 text-teal-400 overflow-hidden relative">
+                        {getClubLogo(top3SurvivalTeams[0].teamName) ? (
+                          <img src={getClubLogo(top3SurvivalTeams[0].teamName)!} alt="" className="w-full h-full object-cover bg-white" referrerPolicy="no-referrer" />
+                        ) : (
+                          <span className="text-sm font-black">{teamRanks[top3SurvivalTeams[0].teamName] || 1}</span>
+                        )}
+                        {getClubLogo(top3SurvivalTeams[0].teamName) && (
+                          <span className="absolute bottom-0 right-0 w-4 h-4 bg-teal-400 text-slate-950 font-black rounded-full flex items-center justify-center text-[9px] border border-slate-900 shadow-sm">{teamRanks[top3SurvivalTeams[0].teamName] || 1}</span>
+                        )}
                       </div>
                       <span className="text-xs font-extrabold text-teal-300 uppercase truncate max-w-[105px] text-center tracking-wide">{top3SurvivalTeams[0].teamName}</span>
                       <span className="text-xs font-black text-teal-400 mt-1 px-1.5 py-0.2 bg-teal-950/40 border border-teal-900/40 rounded">{top3SurvivalTeams[0].totalScore} điểm</span>
@@ -1445,8 +1555,15 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
                 <div className="flex-1 flex flex-col items-center">
                   {top3SurvivalTeams[2] ? (
                     <div className="flex flex-col items-center">
-                      <div className="w-10 h-10 rounded-full bg-slate-900 border border-amber-700 flex items-center justify-center mb-2 shadow-sm text-amber-700">
-                        <span className="text-sm font-black">{teamRanks[top3SurvivalTeams[2].teamName] || 3}</span>
+                      <div className="w-10 h-10 rounded-full bg-slate-900 border border-amber-700 flex items-center justify-center mb-2 shadow-sm text-amber-700 overflow-hidden relative">
+                        {getClubLogo(top3SurvivalTeams[2].teamName) ? (
+                          <img src={getClubLogo(top3SurvivalTeams[2].teamName)!} alt="" className="w-full h-full object-cover bg-white" referrerPolicy="no-referrer" />
+                        ) : (
+                          <span className="text-sm font-black">{teamRanks[top3SurvivalTeams[2].teamName] || 3}</span>
+                        )}
+                        {getClubLogo(top3SurvivalTeams[2].teamName) && (
+                          <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-amber-700 text-white font-black rounded-full flex items-center justify-center text-[8px] border border-slate-900 shadow-sm">{teamRanks[top3SurvivalTeams[2].teamName] || 3}</span>
+                        )}
                       </div>
                       <span className="text-[11px] font-black text-slate-100 uppercase truncate max-w-[95px] text-center">{top3SurvivalTeams[2].teamName}</span>
                       <span className="text-[10px] font-black text-[#d97706] mt-1">{top3SurvivalTeams[2].totalScore} điểm</span>
@@ -1556,8 +1673,8 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
                         </div>
                         
                         <div className="relative w-8 h-8 rounded-full border border-slate-700 overflow-hidden bg-slate-900 shrink-0 group-hover:scale-105 transition-transform duration-300">
-                          {ath.avatarUrl ? (
-                            <img src={ath.avatarUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          {resolveAthleteAvatar(ath) ? (
+                            <img src={resolveAthleteAvatar(ath)!} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             <User className="w-4 h-4 text-slate-400 absolute inset-0 m-auto" />
                           )}
@@ -1570,7 +1687,21 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
                             {idx === 1 && <span className="text-[10px]">⭐</span>}
                             {idx === 2 && <span className="text-[10px]">🎖️</span>}
                           </p>
-                          <p className="text-[10px] text-slate-400 truncate mt-0.5">VSC: {getCleanVscNumber(ath.vscNumber, ath.id)} • {ath.team || "Tự Do"}</p>
+                          <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5 min-w-0">
+                            <span className="truncate">VSC: {getCleanVscNumber(ath.vscNumber, ath.id)}</span>
+                            <span>•</span>
+                            {getClubLogo(ath.team) && (
+                              <div className="w-3.5 h-3.5 rounded-full overflow-hidden border border-slate-850 bg-white shrink-0 relative flex items-center justify-center">
+                                <img 
+                                  src={getClubLogo(ath.team)!} 
+                                  alt="" 
+                                  className="w-full h-full object-cover" 
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                            )}
+                            <span className="truncate">{ath.team || "Tự Do"}</span>
+                          </div>
                         </div>
 
                         <div className="text-right shrink-0">
@@ -1707,29 +1838,21 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
               • Đang Bắn ({activeFlight})
             </button>
             <button
-              onClick={() => setActiveFlightSubTab("next")}
+              onClick={() => setActiveFlightSubTab("upcoming")}
               className={`flex-1 py-1.5 px-2 text-[10px] sm:text-xs font-black rounded-lg transition-all duration-200 uppercase tracking-wider ${
-                activeFlightSubTab === "next"
-                  ? "bg-blue-600 text-white shadow-md font-black"
+                activeFlightSubTab === "upcoming"
+                  ? secondColumnView === "next"
+                    ? "bg-blue-600 text-white shadow-md font-black"
+                    : "bg-[#6d28d9] text-white shadow-md font-black"
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              • Chờ Bắn ({activeFlight + 1})
-            </button>
-            <button
-              onClick={() => setActiveFlightSubTab("test")}
-              className={`flex-1 py-1.5 px-2 text-[10px] sm:text-xs font-black rounded-lg transition-all duration-200 uppercase tracking-wider ${
-                activeFlightSubTab === "test"
-                  ? "bg-[#6d28d9] text-white shadow-md font-black"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              • Bắn Thử ({activeFlight + 2})
+              {secondColumnView === "next" ? `• Chờ Bắn (${activeFlight + 1})` : `• Bắn Thử (${activeFlight + 2})`}
             </button>
           </div>
 
-          {/* 3 Columns flight area layout */}
-          <div className="flex-none md:flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 overflow-visible md:overflow-hidden min-h-0">
+          {/* 2 Columns flight area layout */}
+          <div className="flex-none md:flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-visible md:overflow-hidden min-h-0">
 
             {/* Sub-column 1: Đang thi đấu cá nhân */}
             <div className={`flex flex-col bg-[#0b101c] border border-emerald-500/15 rounded-2xl overflow-visible md:overflow-hidden shadow-md h-auto md:h-full min-h-0 ${
@@ -1795,15 +1918,37 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
                               L{liveInfo ? liveInfo.laneNumber : laneNumber}
                             </div>
 
+                            {/* Athlete Avatar */}
+                            <div className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-slate-700 overflow-hidden bg-slate-900 shrink-0">
+                              {resolveAthleteAvatar(ath) ? (
+                                <img src={resolveAthleteAvatar(ath)!} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <User className="w-4 h-4 text-slate-400 absolute inset-0 m-auto" />
+                              )}
+                            </div>
+
                             <div className="flex-1 min-w-0">
                               <h4 className="text-[11px] sm:text-xs font-black text-slate-100 uppercase truncate tracking-wide flex items-center gap-1">
                                 {ath.name}
                                 {isBỏThi && <span className="text-[8px] bg-rose-950 border border-rose-900 text-rose-400 font-extrabold px-1 rounded scale-90">BỎ THI</span>}
                                 {liveInfo && <span className="text-[8px] bg-emerald-500 border border-emerald-600 text-white font-extrabold px-1 rounded animate-pulse scale-90 shrink-0">LIVE</span>}
                               </h4>
-                              <p className="text-[9px] sm:text-[10px] text-slate-400 truncate font-bold uppercase tracking-wider">
-                                VSC: {getCleanVscNumber(ath.vscNumber, ath.id)} {ath.bibNumber ? `• ${getCleanBibNumber(ath.bibNumber, ath.id)}` : ''} • {ath.team || "Tự Do"}
-                              </p>
+                              <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 truncate flex-wrap">
+                                <span>VSC: {getCleanVscNumber(ath.vscNumber, ath.id)}</span>
+                                {ath.bibNumber && <span>• {getCleanBibNumber(ath.bibNumber, ath.id)}</span>}
+                                <span>•</span>
+                                {getClubLogo(ath.team) && (
+                                  <div className="w-3.5 h-3.5 rounded-full overflow-hidden border border-slate-850 bg-white shrink-0 relative flex items-center justify-center">
+                                    <img 
+                                      src={getClubLogo(ath.team)!} 
+                                      alt="" 
+                                      className="w-full h-full object-cover" 
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  </div>
+                                )}
+                                <span className="truncate">{ath.team || "Tự Do"}</span>
+                              </div>
                               {liveInfo && (
                                 <p className="text-[8px] text-emerald-400/90 font-extrabold uppercase mt-0.5 tracking-wider truncate">
                                   👤 TT: {liveInfo.refereeName}
@@ -1868,140 +2013,187 @@ export const LiveBoard: React.FC<LiveBoardProps> = ({
               </div>
             </div>
 
-            {/* Sub-column 2: Danh sách VĐV chờ thi đấu */}
-            <div className={`flex flex-col bg-[#0b101c] border border-blue-500/15 rounded-2xl overflow-visible md:overflow-hidden shadow-md h-auto md:h-full min-h-0 ${
-              activeFlightSubTab === "next" ? "flex" : "hidden lg:flex"
+            {/* Column 2: Alternating between Chờ Thi Đấu and Bắn Thử */}
+            <div className={`flex flex-col h-auto md:h-full min-h-0 ${
+              activeFlightSubTab === "upcoming" ? "flex" : "hidden lg:flex"
             }`}>
-              <div className="px-4 py-3 bg-gradient-to-r from-blue-600/10 to-blue-550/5 border-b border-blue-500/20 flex items-center gap-2 shrink-0">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
-                <h3 className="text-xs font-black text-blue-400 uppercase tracking-wider flex-1">Chờ Thi Đấu</h3>
-                <span className="text-[10px] bg-blue-950 text-blue-400 px-2 py-0.5 rounded-md font-bold shrink-0 shadow-sm border border-blue-950">
-                  Lượt {activeFlight + 1}
-                </span>
-              </div>
-
-              <div className="flex-none md:flex-1 flex flex-col justify-stretch p-3 gap-1.5 min-h-0 overflow-visible md:overflow-y-auto pr-1 h-auto md:h-full scrollbar-thin">
-                {currentGroup2Slots.length === 0 ? (
-                  <div className="flex-1 flex items-center justify-center border border-dashed border-[#232f52] rounded-xl text-xs text-slate-500 font-extrabold capitalize bg-[#0c1222]/25 py-8">
-                    Hết danh sách chờ
+              {secondColumnView === "next" ? (
+                /* Sub-column 2: Danh sách VĐV chờ thi đấu */
+                <div className="flex flex-col bg-[#0b101c] border border-blue-500/15 rounded-2xl overflow-visible md:overflow-hidden shadow-md h-full min-h-0 animate-fadeIn">
+                  <div className="px-4 py-3 bg-gradient-to-r from-blue-600/10 to-blue-550/5 border-b border-blue-500/20 flex items-center gap-2 shrink-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
+                    <h3 className="text-xs font-black text-blue-400 uppercase tracking-wider flex-1">Chờ Thi Đấu</h3>
+                    <span className="text-[10px] bg-blue-950 text-blue-400 px-2 py-0.5 rounded-md font-bold shrink-0 shadow-sm border border-blue-950">
+                      Lượt {activeFlight + 1}
+                    </span>
                   </div>
-                ) : (
-                  currentGroup2Slots.map(({ slotIdx, laneNumber, athlete: ath }) => {
-                    if (!ath) {
-                      return (
-                        <div key={`empty-slot-g2-${slotIdx}-${laneNumber}`} className="min-h-[30px] md:min-h-0 md:flex-1 p-2 border border-dashed border-[#232f52] rounded-xl flex items-center justify-center text-[10px] sm:text-xs text-slate-600 font-bold uppercase tracking-widest bg-[#0c1222]/40 transition-all shrink-0 md:shrink">
-                          LANE {laneNumber} - TRỐNG
-                        </div>
-                      );
-                    }
 
-                    const isBỏThi = ath.status === "Bỏ thi";
-
-                    return (
-                      <div key={ath.id} className={`p-2 rounded-xl border transition-all flex flex-col justify-center shrink-0 md:flex-1 md:shrink md:min-h-0 ${
-                        isBỏThi
-                          ? "bg-rose-950/15 border-rose-950/40 opacity-45"
-                          : "bg-blue-950/10 border-[#1f2f55] hover:border-blue-555 shadow-md animate-fadeIn"
-                      }`}>
-                        <div className="flex items-center justify-between gap-2.5 w-full">
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-[10px] sm:text-xs font-black shrink-0 border uppercase ${
-                              isBỏThi ? "bg-rose-950 border-rose-900 text-rose-400" : "bg-[#1d273d] border-blue-800 text-blue-400 shadow-sm"
-                            }`}>
-                              L{laneNumber}
+                  <div className="flex-none md:flex-1 flex flex-col justify-stretch p-3 gap-1.5 min-h-0 overflow-visible md:overflow-y-auto pr-1 h-auto md:h-full scrollbar-thin">
+                    {currentGroup2Slots.length === 0 ? (
+                      <div className="flex-1 flex items-center justify-center border border-dashed border-[#232f52] rounded-xl text-xs text-slate-500 font-extrabold capitalize bg-[#0c1222]/25 py-8">
+                        Hết danh sách chờ
+                      </div>
+                    ) : (
+                      currentGroup2Slots.map(({ slotIdx, laneNumber, athlete: ath }) => {
+                        if (!ath) {
+                          return (
+                            <div key={`empty-slot-g2-${slotIdx}-${laneNumber}`} className="min-h-[30px] md:min-h-0 md:flex-1 p-2 border border-dashed border-[#232f52] rounded-xl flex items-center justify-center text-[10px] sm:text-xs text-slate-600 font-bold uppercase tracking-widest bg-[#0c1222]/40 transition-all shrink-0 md:shrink">
+                              LANE {laneNumber} - TRỐNG
                             </div>
+                          );
+                        }
 
-                            <div className="flex-1 min-w-0">
-                              <h4 className="text-[11px] sm:text-xs font-black text-slate-100 uppercase truncate tracking-wide flex items-center gap-1">
-                                {ath.name}
-                                {isBỏThi && <span className="text-[8px] bg-rose-950 border border-rose-900 text-rose-400 font-extrabold px-1 rounded scale-90">BỎ THI</span>}
-                              </h4>
-                              <p className="text-[9px] sm:text-[10px] text-slate-400 truncate font-bold uppercase tracking-wider">
-                                VSC: {getCleanVscNumber(ath.vscNumber, ath.id)} {ath.bibNumber ? `• ${getCleanBibNumber(ath.bibNumber, ath.id)}` : ''} • {ath.team || "Tự Do"}
-                              </p>
+                        const isBỏThi = ath.status === "Bỏ thi";
+
+                        return (
+                          <div key={ath.id} className={`p-2 rounded-xl border transition-all flex flex-col justify-center shrink-0 md:flex-1 md:shrink md:min-h-0 ${
+                            isBỏThi
+                              ? "bg-rose-950/15 border-rose-950/40 opacity-45"
+                              : "bg-blue-950/10 border-[#1f2f55] hover:border-blue-555 shadow-md animate-fadeIn"
+                          }`}>
+                            <div className="flex items-center justify-between gap-2.5 w-full">
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-[10px] sm:text-xs font-black shrink-0 border uppercase ${
+                                  isBỏThi ? "bg-rose-950 border-rose-900 text-rose-400" : "bg-[#1d273d] border-blue-800 text-blue-400 shadow-sm"
+                                }`}>
+                                  L{laneNumber}
+                                </div>
+
+                                {/* Athlete Avatar */}
+                                <div className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-slate-700 overflow-hidden bg-slate-900 shrink-0">
+                                  {resolveAthleteAvatar(ath) ? (
+                                    <img src={resolveAthleteAvatar(ath)!} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <User className="w-4 h-4 text-slate-400 absolute inset-0 m-auto" />
+                                  )}
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="text-[11px] sm:text-xs font-black text-slate-100 uppercase truncate tracking-wide flex items-center gap-1">
+                                    {ath.name}
+                                    {isBỏThi && <span className="text-[8px] bg-rose-950 border border-rose-900 text-rose-400 font-extrabold px-1 rounded scale-90">BỎ THI</span>}
+                                  </h4>
+                                  <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 truncate flex-wrap">
+                                    <span>VSC: {getCleanVscNumber(ath.vscNumber, ath.id)}</span>
+                                    {ath.bibNumber && <span>• {getCleanBibNumber(ath.bibNumber, ath.id)}</span>}
+                                    <span>•</span>
+                                    {getClubLogo(ath.team) && (
+                                      <div className="w-3.5 h-3.5 rounded-full overflow-hidden border border-slate-850 bg-white shrink-0 relative flex items-center justify-center">
+                                        <img 
+                                          src={getClubLogo(ath.team)!} 
+                                          alt="" 
+                                          className="w-full h-full object-cover" 
+                                          referrerPolicy="no-referrer"
+                                        />
+                                      </div>
+                                    )}
+                                    <span className="truncate">{ath.team || "Tự Do"}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {!isBỏThi && (
+                                <div className="text-right shrink-0 flex flex-col items-end">
+                                  <span className="text-[10px] sm:text-[11px] bg-blue-950/50 text-blue-400 border border-blue-900 px-1.5 py-0.5 rounded font-bold uppercase text-[9px] tracking-wide">Sẵn Sàng</span>
+                                  <span className="text-[8px] text-slate-500 font-bold uppercase mt-1">Kế Tiếp</span>
+                                </div>
+                              )}
                             </div>
                           </div>
-
-                          {!isBỏThi && (
-                            <div className="text-right shrink-0 flex flex-col items-end">
-                              <span className="text-[10px] sm:text-[11px] bg-blue-950/50 text-blue-400 border border-blue-900 px-1.5 py-0.5 rounded font-bold uppercase text-[9px] tracking-wide">Sẵn Sàng</span>
-                              <span className="text-[8px] text-slate-500 font-bold uppercase mt-1">Kế Tiếp</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {/* Sub-column 3: Danh sách VĐV bắn thử */}
-            <div className={`flex flex-col bg-[#0b101c] border border-violet-500/15 rounded-2xl overflow-visible md:overflow-hidden shadow-md h-auto md:h-full min-h-0 ${
-              activeFlightSubTab === "test" ? "flex" : "hidden lg:flex"
-            }`}>
-              <div className="px-4 py-3 bg-gradient-to-r from-violet-600/10 to-violet-550/5 border-b border-violet-500/20 flex items-center gap-2 shrink-0">
-                <span className="w-2.5 h-2.5 rounded-full bg-violet-500 animate-pulse"></span>
-                <h3 className="text-xs font-black text-violet-400 uppercase tracking-wider flex-1">Bắn Thử (Warming)</h3>
-                <span className="text-[10px] bg-violet-950 text-violet-400 px-2 py-0.5 rounded-md font-bold shrink-0 shadow-sm border border-violet-950">
-                  Lượt {activeFlight + 2}
-                </span>
-              </div>
-
-              <div className="flex-none md:flex-1 flex flex-col justify-stretch p-3 gap-1.5 min-h-0 overflow-visible md:overflow-y-auto pr-1 h-auto md:h-full scrollbar-thin">
-                {currentGroup3Slots.length === 0 ? (
-                  <div className="flex-1 flex items-center justify-center border border-dashed border-[#232f52] rounded-xl text-xs text-slate-500 font-extrabold capitalize bg-[#0c1222]/25 py-8">
-                    Hết danh sách bắn thử
+                        );
+                      })
+                    )}
                   </div>
-                ) : (
-                  currentGroup3Slots.map(({ slotIdx, laneNumber, athlete: ath }) => {
-                    if (!ath) {
-                      return (
-                        <div key={`empty-slot-g3-${slotIdx}-${laneNumber}`} className="min-h-[30px] md:min-h-0 md:flex-1 p-2 border border-dashed border-[#232f52] rounded-xl flex items-center justify-center text-[10px] sm:text-xs text-slate-600 font-bold uppercase tracking-widest bg-[#0c1222]/40 transition-all shrink-0 md:shrink">
-                          LANE {laneNumber} - TRỐNG
-                        </div>
-                      );
-                    }
+                </div>
+              ) : (
+                /* Sub-column 3: Danh sách VĐV bắn thử */
+                <div className="flex flex-col bg-[#0b101c] border border-violet-500/15 rounded-2xl overflow-visible md:overflow-hidden shadow-md h-full min-h-0 animate-fadeIn">
+                  <div className="px-4 py-3 bg-gradient-to-r from-violet-600/10 to-violet-550/5 border-b border-violet-500/20 flex items-center gap-2 shrink-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-violet-500 animate-pulse"></span>
+                    <h3 className="text-xs font-black text-violet-400 uppercase tracking-wider flex-1">Bắn Thử (Warming)</h3>
+                    <span className="text-[10px] bg-violet-950 text-violet-400 px-2 py-0.5 rounded-md font-bold shrink-0 shadow-sm border border-violet-950">
+                      Lượt {activeFlight + 2}
+                    </span>
+                  </div>
 
-                    const isBỏThi = ath.status === "Bỏ thi";
-
-                    return (
-                      <div key={ath.id} className={`p-2 rounded-xl border transition-all flex flex-col justify-center shrink-0 md:flex-1 md:shrink md:min-h-0 ${
-                        isBỏThi
-                          ? "bg-rose-950/15 border-rose-950/40 opacity-45"
-                          : "bg-violet-950/10 border-[#2f1c50] hover:border-violet-550 shadow-md animate-fadeIn"
-                      }`}>
-                        <div className="flex items-center justify-between gap-2.5 w-full">
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-[10px] sm:text-xs font-black shrink-0 border uppercase ${
-                              isBỏThi ? "bg-rose-950 border-rose-900 text-rose-400" : "bg-[#251d3d] border-violet-800 text-violet-400 shadow-sm"
-                            }`}>
-                              L{laneNumber}
+                  <div className="flex-none md:flex-1 flex flex-col justify-stretch p-3 gap-1.5 min-h-0 overflow-visible md:overflow-y-auto pr-1 h-auto md:h-full scrollbar-thin">
+                    {currentGroup3Slots.length === 0 ? (
+                      <div className="flex-1 flex items-center justify-center border border-dashed border-[#232f52] rounded-xl text-xs text-slate-500 font-extrabold capitalize bg-[#0c1222]/25 py-8">
+                        Hết danh sách bắn thử
+                      </div>
+                    ) : (
+                      currentGroup3Slots.map(({ slotIdx, laneNumber, athlete: ath }) => {
+                        if (!ath) {
+                          return (
+                            <div key={`empty-slot-g3-${slotIdx}-${laneNumber}`} className="min-h-[30px] md:min-h-0 md:flex-1 p-2 border border-dashed border-[#232f52] rounded-xl flex items-center justify-center text-[10px] sm:text-xs text-slate-600 font-bold uppercase tracking-widest bg-[#0c1222]/40 transition-all shrink-0 md:shrink">
+                              LANE {laneNumber} - TRỐNG
                             </div>
+                          );
+                        }
 
-                            <div className="flex-1 min-w-0">
-                              <h4 className="text-[11px] sm:text-xs font-black text-slate-100 uppercase truncate tracking-wide flex items-center gap-1">
-                                {ath.name}
-                                {isBỏThi && <span className="text-[8px] bg-rose-950 border border-rose-900 text-rose-400 font-extrabold px-1 rounded scale-90">BỎ THI</span>}
-                              </h4>
-                              <p className="text-[9px] sm:text-[10px] text-slate-400 truncate font-bold uppercase tracking-wider">
-                                VSC: {getCleanVscNumber(ath.vscNumber, ath.id)} {ath.bibNumber ? `• ${getCleanBibNumber(ath.bibNumber, ath.id)}` : ''} • {ath.team || "Tự Do"}
-                              </p>
+                        const isBỏThi = ath.status === "Bỏ thi";
+
+                        return (
+                          <div key={ath.id} className={`p-2 rounded-xl border transition-all flex flex-col justify-center shrink-0 md:flex-1 md:shrink md:min-h-0 ${
+                            isBỏThi
+                              ? "bg-rose-950/15 border-rose-950/40 opacity-45"
+                              : "bg-violet-950/10 border-[#2f1c50] hover:border-violet-550 shadow-md animate-fadeIn"
+                          }`}>
+                            <div className="flex items-center justify-between gap-2.5 w-full">
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                <div className={`w-6 h-6 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-[10px] sm:text-xs font-black shrink-0 border uppercase ${
+                                  isBỏThi ? "bg-rose-950 border-rose-900 text-rose-400" : "bg-[#251d3d] border-violet-800 text-violet-400 shadow-sm"
+                                }`}>
+                                  L{laneNumber}
+                                </div>
+
+                                {/* Athlete Avatar */}
+                                <div className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-slate-700 overflow-hidden bg-slate-900 shrink-0">
+                                  {resolveAthleteAvatar(ath) ? (
+                                    <img src={resolveAthleteAvatar(ath)!} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <User className="w-4 h-4 text-slate-400 absolute inset-0 m-auto" />
+                                  )}
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="text-[11px] sm:text-xs font-black text-slate-100 uppercase truncate tracking-wide flex items-center gap-1">
+                                    {ath.name}
+                                    {isBỏThi && <span className="text-[8px] bg-rose-950 border border-rose-900 text-rose-400 font-extrabold px-1 rounded scale-90">BỎ THI</span>}
+                                  </h4>
+                                  <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 truncate flex-wrap">
+                                    <span>VSC: {getCleanVscNumber(ath.vscNumber, ath.id)}</span>
+                                    {ath.bibNumber && <span>• {getCleanBibNumber(ath.bibNumber, ath.id)}</span>}
+                                    <span>•</span>
+                                    {getClubLogo(ath.team) && (
+                                      <div className="w-3.5 h-3.5 rounded-full overflow-hidden border border-slate-850 bg-white shrink-0 relative flex items-center justify-center">
+                                        <img 
+                                          src={getClubLogo(ath.team)!} 
+                                          alt="" 
+                                          className="w-full h-full object-cover" 
+                                          referrerPolicy="no-referrer"
+                                        />
+                                      </div>
+                                    )}
+                                    <span className="truncate">{ath.team || "Tự Do"}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {!isBỏThi && (
+                                <div className="text-right shrink-0 flex flex-col items-end">
+                                  <span className="text-[10px] sm:text-[11px] bg-violet-950/50 text-violet-400 border border-violet-900 px-1.5 py-0.5 rounded font-bold uppercase text-[9px] tracking-wide">Bắn Thử</span>
+                                  <span className="text-[8px] text-slate-500 font-bold uppercase mt-1">Lùi 2 Lượt</span>
+                                </div>
+                              )}
                             </div>
                           </div>
-
-                          {!isBỏThi && (
-                            <div className="text-right shrink-0 flex flex-col items-end">
-                              <span className="text-[10px] sm:text-[11px] bg-violet-950/50 text-violet-400 border border-violet-900 px-1.5 py-0.5 rounded font-bold uppercase text-[9px] tracking-wide">Bắn Thử</span>
-                              <span className="text-[8px] text-slate-500 font-bold uppercase mt-1">Lùi 2 Lượt</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
           </div>

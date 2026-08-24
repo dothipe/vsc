@@ -3,6 +3,7 @@ import { Athlete, DistanceConfig } from "../types";
 import { Users, Award, Shield, Trophy, Medal } from "lucide-react";
 import { calculateRounds, getHitCount } from "../utils/qualification";
 import { getCleanVscNumber, getCleanBibNumber, isNoTeam } from "../utils/athleteUtils";
+import { useTournamentState } from "../providers/TournamentStateProvider";
 
 interface TeamLeaderboardProps {
   athletes: Athlete[];
@@ -48,6 +49,18 @@ export const TeamLeaderboard: React.FC<TeamLeaderboardProps> = ({
   directMaxPoints,
   teamDirectMaxPoints,
 }) => {
+  const { vscSystemClubs } = useTournamentState();
+
+  const getClubLogo = (tName: string) => {
+    if (!vscSystemClubs || !tName) return null;
+    const found = vscSystemClubs.find(
+      (c: any) =>
+        c.clubName?.trim().toLowerCase() === tName.trim().toLowerCase() ||
+        c.name?.trim().toLowerCase() === tName.trim().toLowerCase()
+    );
+    return found?.logoUrl || null;
+  };
+
   const [activeTab, setActiveTab] = useState<"survival" | "allRound">("survival");
 
   const isDirectMode = shotsCount === 1;
@@ -1197,7 +1210,17 @@ export const TeamLeaderboard: React.FC<TeamLeaderboardProps> = ({
 
                     <div className="mt-4">
                       <h3 className="text-base font-extrabold text-slate-800 dark:text-white line-clamp-2 flex items-center gap-1.5" title={team.teamName}>
-                        {team.teamName}
+                        {getClubLogo(team.teamName) && (
+                          <div className="w-5 h-5 rounded-full overflow-hidden border border-gray-200 bg-white shrink-0 relative flex items-center justify-center">
+                            <img 
+                              src={getClubLogo(team.teamName)!} 
+                              alt="" 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        )}
+                        <span>{team.teamName}</span>
                         {isIndividualTeam && (
                           <span className="text-[9px] text-gray-500 dark:text-gray-400 font-normal italic px-1 bg-gray-150 dark:bg-slate-800 rounded shrink-0">
                             Tự Do

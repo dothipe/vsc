@@ -7,6 +7,7 @@ import { calculateRounds } from "../utils/qualification";
 import { getCleanVscNumber, getCleanBibNumber, isNoTeam } from "../utils/athleteUtils";
 import { ensureArray, subscribeToVscSystemAthletes } from "../lib/firebaseService";
 import { getSoloRoundsFromDist } from "../engines/rankingEngine";
+import { useTournamentState } from "../providers/TournamentStateProvider";
 
 interface LeaderboardProps {
   athletes: Athlete[];
@@ -33,6 +34,18 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
   teamDirectMaxPoints,
   activeDistanceIndex,
 }) => {
+  const { vscSystemClubs } = useTournamentState();
+
+  const getClubLogo = (tName: string) => {
+    if (!vscSystemClubs || !tName) return null;
+    const found = vscSystemClubs.find(
+      (c: any) =>
+        c.clubName?.trim().toLowerCase() === tName.trim().toLowerCase() ||
+        c.name?.trim().toLowerCase() === tName.trim().toLowerCase()
+    );
+    return found?.logoUrl || null;
+  };
+
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTeam, setSelectedTeam] = useState("all");
   const [sortField, setSortField] = useState<SortField>("rank");
@@ -1868,7 +1881,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                         rowSpan={competitionMode === "team" ? teamRowSpan : undefined}
                       >
                       {athlete.team ? (
-                        <span className={`text-[13px] sm:text-xs md:text-sm font-bold px-2.5 py-1.5 rounded-md border inline-block select-none shadow-sm/5 transition-all ${
+                        <span className={`text-[13px] sm:text-xs md:text-sm font-bold px-2.5 py-1.5 rounded-md border flex items-center gap-1.5 w-fit select-none shadow-sm/5 transition-all ${
                           isTop1 
                             ? "bg-amber-500/[0.08] text-amber-900 border-amber-500/25 dark:text-amber-200"
                             : isTop2
@@ -1877,7 +1890,17 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                                 ? "bg-amber-700/[0.08] text-amber-800 border-amber-600/25 dark:text-amber-300"
                                 : "bg-blue-50/80 text-blue-800 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900/40"
                         }`}>
-                          {athlete.team}
+                          {getClubLogo(athlete.team) && (
+                            <div className="w-5 h-5 rounded-full overflow-hidden border border-gray-250 bg-white shrink-0 relative flex items-center justify-center">
+                              <img 
+                                src={getClubLogo(athlete.team)!} 
+                                alt="" 
+                                className="w-full h-full object-cover" 
+                                referrerPolicy="no-referrer"
+                              />
+                            </div>
+                          )}
+                          <span>{athlete.team}</span>
                         </span>
                       ) : (
                         <span className="text-gray-400 italic text-xs">Không có</span>

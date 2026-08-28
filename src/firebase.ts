@@ -51,13 +51,11 @@ export const googleProvider = new GoogleAuthProvider();
 // Initialize Storage
 export const storage = getStorage(app);
 
-// Initialize Firestore targeting the custom Database ID with long-polling and persistent local cache enabled to stay resilient when offline
+// Initialize Firestore targeting the custom Database ID with persistent local cache enabled to stay resilient when offline
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager(),
   }),
-  experimentalForceLongPolling: true,
-  useFetchHandler: true,
 } as any, firebaseAppletConfig.firestoreDatabaseId || "ai-studio-3031112d-39bd-4933-828d-a6397149f785");
 
 export {

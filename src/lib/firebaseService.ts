@@ -721,39 +721,22 @@ export function subscribeToTournamentsList(callback: (tournaments: TournamentDat
   const collectionRef = collection(db, "v3_tournaments");
   const q = query(collectionRef, orderBy("createdAt", "desc"));
   
-  return onSnapshot(q, async (snapshot) => {
-    const promises = snapshot.docs.map(async (docSnap) => {
+  return onSnapshot(q, (snapshot) => {
+    const list = snapshot.docs.map((docSnap) => {
       const id = docSnap.id;
       const data = normalizeFirestoreData(docSnap.data());
-      
-      const athletesRef = doc(db, "v3_tournaments", id, "parts", "athletes");
-      const teamAthletesRef = doc(db, "v3_tournaments", id, "parts", "teamAthletes");
-      
-      const [athSnap, teamSnap] = await Promise.all([
-        getDoc(athletesRef),
-        getDoc(teamAthletesRef)
-      ]);
-      
-      const athletesData = athSnap.exists() ? normalizeFirestoreData(athSnap.data()) : null;
-      const teamAthletesData = teamSnap.exists() ? normalizeFirestoreData(teamSnap.data()) : null;
       
       return {
         id,
         ...data,
-        athletes: athletesData !== null ? (athletesData.athletes || []) : (data.athletes || []),
-        inputAthletes: athletesData !== null ? (athletesData.inputAthletes || []) : (data.inputAthletes || []),
-        teamAthletes: teamAthletesData !== null ? (teamAthletesData.teamAthletes || []) : (data.teamAthletes || []),
-        teamInputAthletes: teamAthletesData !== null ? (teamAthletesData.teamInputAthletes || []) : (data.teamInputAthletes || []),
+        athletes: data.athletes || [],
+        inputAthletes: data.inputAthletes || [],
+        teamAthletes: data.teamAthletes || [],
+        teamInputAthletes: data.teamInputAthletes || [],
         matchName: data.tournamentName || data.matchName || data.name || "Giải đấu mới",
       } as TournamentData;
     });
-
-    try {
-      const list = await Promise.all(promises);
-      callback(list);
-    } catch (err) {
-      console.error("Error fetching complete list items:", err);
-    }
+    callback(list);
   }, (error) => {
     handleFirestoreError(error, OperationType.LIST, "v3_tournaments");
   });
